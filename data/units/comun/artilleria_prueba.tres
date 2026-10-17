@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="UnitDef" format=3]
+
+[ext_resource type="Script" path="res://core/defs/unit_def.gd" id="1_unit"]
+
+[resource]
+script = ExtResource("1_unit")
+id = &"artilleria_prueba"
+display_name = "Artillería de prueba"
+description = "Unidad de prueba para las vistas provisionales (T-017). No es contenido histórico."
+max_hp = 150
+vision_range = 300.0
+placeholder_shape = 1
+placeholder_size = Vector3(2.2, 1.2, 2.2)
+placeholder_label = "ART"
+category = 3
+speed = 3.0
+radius = 1.6

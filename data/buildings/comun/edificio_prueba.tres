@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BuildingDef" format=3]
+
+[ext_resource type="Script" path="res://core/defs/building_def.gd" id="1_building"]
+
+[resource]
+script = ExtResource("1_building")
+id = &"edificio_prueba"
+display_name = "Edificio de prueba"
+description = "Edificio de prueba para las vistas provisionales (T-017). No es contenido histórico."
+max_hp = 1500
+vision_range = 200.0
+placeholder_size = Vector3(16, 7, 12)
+placeholder_label = "CUARTEL"
+footprint = Vector2i(2, 2)

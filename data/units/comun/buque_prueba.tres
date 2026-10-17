@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UnitDef" format=3]
+
+[ext_resource type="Script" path="res://core/defs/unit_def.gd" id="1_unit"]
+
+[resource]
+script = ExtResource("1_unit")
+id = &"buque_prueba"
+display_name = "Buque de prueba"
+description = "Unidad naval de prueba para las vistas provisionales (T-017). No es contenido histórico."
+max_hp = 2000
+vision_range = 600.0
+placeholder_shape = 3
+placeholder_size = Vector3(10, 6, 60)
+placeholder_label = "BUQUE"
+domain = 1
+category = 4
+speed = 6.0
+turn_rate = 20.0
+radius = 12.0
+pop_cost = 4
