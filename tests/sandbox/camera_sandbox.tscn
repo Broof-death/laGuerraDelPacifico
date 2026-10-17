@@ -1,0 +1,209 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://client/camera/rts_camera.tscn" id="1_cam"]
+[ext_resource type="Script" path="res://tests/sandbox/camera_sandbox.gd" id="0_sandbox"]
+[ext_resource type="Script" path="res://procedural_floor.gd" id="2_floor"]
+[ext_resource type="PackedScene" path="res://assets/models/barcos/huascar.glb" id="3_huascar"]
+[ext_resource type="PackedScene" path="res://assets/models/barcos/esmeralda.glb" id="4_esmeralda"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/tower_complete_large.glb" id="5_tower"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/castle_wall.glb" id="6_wall"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/cannon.glb" id="7_cannon"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/cannon_mobile.glb" id="8_cannon_mobile"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/structure_platform_dock.glb" id="9_dock"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/mini_characters/character_male_a.glb" id="10_male_a"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/mini_characters/character_male_c.glb" id="11_male_c"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/mini_characters/character_female_b.glb" id="12_female_b"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/barrel.glb" id="13_barrel"]
+[ext_resource type="PackedScene" path="res://assets/models/kenney/pirate_kit/rocks_sand_a.glb" id="14_rocks"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+sky_top_color = Color(0.32, 0.52, 0.8, 1)
+sky_horizon_color = Color(0.74, 0.8, 0.86, 1)
+ground_bottom_color = Color(0.45, 0.4, 0.34, 1)
+ground_horizon_color = Color(0.74, 0.8, 0.86, 1)
+sun_angle_max = 30.0
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 3
+ambient_light_sky_contribution = 0.5
+ambient_light_energy = 0.35
+tonemap_mode = 3
+fog_enabled = true
+fog_light_color = Color(0.74, 0.8, 0.86, 1)
+fog_mode = 1
+fog_density = 1.0
+fog_depth_curve = 1.5
+fog_depth_begin = 2500.0
+fog_depth_end = 6000.0
+fog_sky_affect = 0.0
+
+[sub_resource type="StandardMaterial3D" id="sand_mat"]
+metallic_specular = 0.0
+albedo_color = Color(0.64, 0.52, 0.36, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="water_mat"]
+albedo_color = Color(0.03, 0.14, 0.24, 1)
+metallic_specular = 0.7
+roughness = 0.3
+
+[sub_resource type="PlaneMesh" id="water_mesh"]
+material = SubResource("water_mat")
+size = Vector2(8000, 10000)
+
+[sub_resource type="StandardMaterial3D" id="wet_sand_mat"]
+metallic_specular = 0.0
+albedo_color = Color(0.55, 0.45, 0.32, 1)
+roughness = 0.9
+
+[sub_resource type="PlaneMesh" id="beach_mesh"]
+material = SubResource("wet_sand_mat")
+size = Vector2(24, 10000)
+
+[sub_resource type="StyleBoxFlat" id="panel_style"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0, 0, 0, 0.55)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="CameraSandbox" type="Node3D"]
+script = ExtResource("0_sandbox")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 50, 0)
+light_energy = 0.85
+shadow_enabled = true
+directional_shadow_max_distance = 300.0
+
+[node name="RtsCamera" parent="." instance=ExtResource("1_cam")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 25)
+map_bounds = Rect2(-2000, -2000, 4000, 4000)
+initial_zoom = 0.53
+
+[node name="Tierra" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.3, 0)
+
+[node name="ProceduralFloor" type="Node3D" parent="Tierra"]
+script = ExtResource("2_floor")
+chunk_size = 256.0
+view_radius = 12
+floor_material = SubResource("sand_mat")
+with_collision = false
+
+[node name="Playa" type="MeshInstance3D" parent="Tierra"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.08, 0)
+mesh = SubResource("beach_mesh")
+
+[node name="Fuerte" type="Node3D" parent="Tierra"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, -10)
+
+[node name="Torreon" parent="Tierra/Fuerte" instance=ExtResource("5_tower")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)
+
+[node name="Muro1" parent="Tierra/Fuerte" instance=ExtResource("6_wall")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 9)
+
+[node name="Muro2" parent="Tierra/Fuerte" instance=ExtResource("6_wall")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 14.6)
+
+[node name="Muro3" parent="Tierra/Fuerte" instance=ExtResource("6_wall")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, -9)
+
+[node name="Bateria" type="Node3D" parent="Tierra"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0, 0)
+
+[node name="Canon1" parent="Tierra/Bateria" instance=ExtResource("7_cannon")]
+transform = Transform3D(0, 0, -1.5, 0, 1.5, 0, 1.5, 0, 0, 0, 0, -6)
+
+[node name="Canon2" parent="Tierra/Bateria" instance=ExtResource("7_cannon")]
+transform = Transform3D(0, 0, -1.5, 0, 1.5, 0, 1.5, 0, 0, 0, 0, 0)
+
+[node name="Canon3" parent="Tierra/Bateria" instance=ExtResource("8_cannon_mobile")]
+transform = Transform3D(0, 0, -1.5, 0, 1.5, 0, 1.5, 0, 0, 0, 0, 6)
+
+[node name="Barril1" parent="Tierra/Bateria" instance=ExtResource("13_barrel")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, -4, 0, 3)
+
+[node name="Barril2" parent="Tierra/Bateria" instance=ExtResource("13_barrel")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, -4.2, 0, 4.2)
+
+[node name="Personajes" type="Node3D" parent="Tierra"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 8)
+
+[node name="Soldado1" parent="Tierra/Personajes" instance=ExtResource("10_male_a")]
+transform = Transform3D(0, 0, -2.6, 0, 2.6, 0, 2.6, 0, 0, 0, 0, 0)
+
+[node name="Soldado2" parent="Tierra/Personajes" instance=ExtResource("11_male_c")]
+transform = Transform3D(0, 0, -2.6, 0, 2.6, 0, 2.6, 0, 0, 0, 0, 1.5)
+
+[node name="Soldado3" parent="Tierra/Personajes" instance=ExtResource("10_male_a")]
+transform = Transform3D(0, 0, -2.6, 0, 2.6, 0, 2.6, 0, 0, 0, 0, 3)
+
+[node name="Civil" parent="Tierra/Personajes" instance=ExtResource("12_female_b")]
+transform = Transform3D(2.6, 0, 0, 0, 2.6, 0, 0, 0, 2.6, 2, 0, -3)
+
+[node name="Rocas1" parent="Tierra" instance=ExtResource("14_rocks")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, -4, 0, -30)
+
+[node name="Rocas2" parent="Tierra" instance=ExtResource("14_rocks")]
+transform = Transform3D(0, 0, 2, 0, 2, 0, -2, 0, 0, -2, 0, 40)
+
+[node name="Mar" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4000, 0, 0)
+mesh = SubResource("water_mesh")
+cast_shadow = 0
+
+[node name="Muelle" type="Node3D" parent="Mar"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4000, 0, 22)
+
+[node name="Tramo1" parent="Mar/Muelle" instance=ExtResource("9_dock")]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 3, -2.6, 0)
+
+[node name="Tramo2" parent="Mar/Muelle" instance=ExtResource("9_dock")]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 13, -2.6, 0)
+
+[node name="Tramo3" parent="Mar/Muelle" instance=ExtResource("9_dock")]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 23, -2.6, 0)
+
+[node name="Huascar" parent="Mar" instance=ExtResource("3_huascar")]
+transform = Transform3D(0.965926, 0, 0.258819, 0, 1, 0, -0.258819, 0, 0.965926, -3920, 0, -25)
+
+[node name="Esmeralda" parent="Mar" instance=ExtResource("4_esmeralda")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3893, 0, 40)
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="PanelContainer" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -12.0
+offset_bottom = -12.0
+grow_vertical = 0
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="Controles" type="Label" parent="HUD/Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Cámara RTS (prueba de T-006)
+WASD / flechas: mover    ratón al borde: mover
+Botón central + arrastrar: arrastrar el mapa
+Q / E  o  Alt + botón central: rotar
+Rueda: zoom (cambia la inclinación)
+
+Escala: barcos en metros reales (Huáscar 60 m, Esmeralda 73 m).
+Kenney escalado: personas x2,6 · cañones x1,5 · fuerte y muros x2 · muelle x4"
