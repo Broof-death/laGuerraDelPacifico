@@ -1,0 +1,22 @@
+{
+  "name": "pizarra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pizarra del proyecto La Guerra del Pacífico: tablero compartido de tareas, bloqueos y decisiones, conectado a Claude Code por MCP.",
+  "type": "module",
+  "scripts": {
+    "mcp": "node mcp/server.js",
+    "resumen": "node scripts/resumen.js",
+    "web": "firebase serve --only hosting",
+    "emulador": "firebase emulators:start --project demo-pizarra",
+    "emulador:datos": "node scripts/sembrar-emulador.js",
+    "probar": "node scripts/probar.js",
+    "desplegar": "firebase deploy --only hosting,firestore"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "dotenv": "16.4.5",
+    "firebase": "12.19.0",
+    "zod": "3.25.76"
+  }
+}
