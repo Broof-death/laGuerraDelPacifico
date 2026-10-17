@@ -3,7 +3,7 @@
 > Tarea: **T-035** (P-004). Alimenta el diseño de economía (**T-022**, `docs/diseno/economia.md`) y los costos provisionales de `docs/diseno/unidades.md` §4 (T-016).
 > Fichas relacionadas: [geografia-1879.md](geografia-1879.md) (§6 agua, §7 recursos, §8 ferrocarriles), [ejercitos-1879.md](ejercitos-1879.md) (§5 logística), [armadas-1879.md](armadas-1879.md).
 > Decisiones en las que se apoya: **ADR-007** (ResourceDef, BuildingDef), **ADR-009** (escala 1:20, edificios a tamaño real), **ADR-014** (caja del mapa 11,5–33,5° S, 78–67° W; lo de fuera no tiene lupa) y **ADR-015** (fronteras).
-> Bloqueos abiertos para Feño: **Q-014** (carbón fuera del mapa) y **Q-015** (licencias de representación). Las licencias de §10 **no están decididas**.
+> Licencias creativas aceptadas por Feño: **ADR-016** (Q-014, opción A: carbón fuera del mapa, por mar) y **ADR-017** (Q-015, opción 3: dos tipos de oficina salitrera, tiempos comprimidos y yacimientos según su estado en 1879). Ver §10.5.
 
 ## Cómo leer esta ficha
 
@@ -27,7 +27,7 @@ Coordenadas en grados decimales WGS84 (sur y oeste negativos). La precisión A/B
 | **Guano** | Covaderas de Tarapacá (Pabellón de Pica, Huanillos, Punta de Lobos), Mejillones; islas de Chincha casi agotadas | Perú; Mejillones, zona compartida Chile–Bolivia (tratado de 1874) | Base del crédito peruano en crisis; la escuadra chilena destruye los embarcaderos en abril de 1879 [D]/[C] |
 | **Plata** | Caracoles (litoral boliviano). **Fuera del mapa:** Huanchaca–Pulacayo y Potosí (Bolivia) | Empresarios chilenos en Caracoles; Compañía Huanchaca (Arce, con socios chilenos) | Caracoles se ocupa en feb–mar 1879; el interés minero boliviano es parte del debate sobre la paz [C] |
 | **Cobre** | Norte Chico chileno (Atacama, Coquimbo), Tocopilla, Chañaral; Corocoro (Bolivia, altiplano) | Chile en su territorio; Bolivia en Tocopilla/Corocoro | Chile era el primer productor mundial hasta ~1880 [D]; peso económico, poco papel militar directo [I] |
-| **Carbón** | **Fuera del mapa:** Lota y Coronel (~37° S, Chile) | Compañía de Lota (Cousiño) | Combustible de la escuadra y de las calderas salitreras [D]; ver Q-014 |
+| **Carbón** | **Fuera del mapa:** Lota y Coronel (~37° S, Chile) | Compañía de Lota (Cousiño) | Combustible de la escuadra y de las calderas salitreras [D]; en el juego llega por mar (ADR-016) |
 | **Agua** | Ríos y quebradas, aguadas, condensadoras de agua de mar en los puertos | Quien ocupara el pozo o el puerto | Recurso limitante de toda operación en el desierto [D] |
 | **Agricultura** | Valles de Lima, Cañete, Ica, Moquegua, Tacna, Azapa; oasis (Pica, Calama, San Pedro); valle de Aconcagua (Chile) | Haciendas privadas | Víveres y forraje para los ejércitos; la expedición Lynch (1880) castiga haciendas del norte peruano, fuera del mapa [D] |
 
@@ -125,7 +125,7 @@ Según Memoria Chilena («Explotación del salitre») [D] en lo general:
 - **Lota y Coronel** (golfo de Arauco, Lota ~37,09° S, 73,16° W): explotación desde **1852** por **Matías Cousiño** (Compañía Carbonífera de Lota). Primero abastecía a los vapores que cruzaban el estrecho de Magallanes; luego ferrocarriles e industria; fundición de cobre desde 1867 (Memoria Chilena, «Lota y Coronel (1854-1995)»; «Lota, Chile», Wikipedia en inglés). [D]
 - Producción: **más de 100 000 t en 1870** y **200 000 t en 1882** (resumen de un artículo de historia minera hallado en búsqueda; no se leyó la fuente original). [P]
 - **Guerra:** en 1879 el primer vapor de la compañía, el *Matías Cousiño*, llevó carbón a Antofagasta para la escuadra (misma fuente). [P] Los buques chilenos se reaprovisionaban de carbón en la zona de operaciones: p. ej., en marzo de 1880 la *Chacabuco* y el *Loa* llevaron carga de Iquique al bloqueo de Mollendo y allí se reaprovisionó de carbón (Revista de Marina, artículos sobre logística naval, resultado de búsqueda). [P] la fuente exacta.
-- **Está fuera de la caja del mapa** (ADR-014 corta en 33,5° S). Cómo representarlo es **Q-014**.
+- **Está fuera de la caja del mapa** (ADR-014 corta en 33,5° S). Decidido en **ADR-016** (Q-014, opción A): no hay minas de carbón en el mapa; a Chile le llega por mar desde el borde sur y Perú y Bolivia lo importan con pesos en sus puertos (§10.3).
 - **Perú y el carbón:** no se encontró fuente sobre su abastecimiento (importado, presumiblemente británico) ni sobre escasez en 1879. Una ficha del *Huáscar* (naval-encyclopedia.com) dice que daba entre 9 y 12,3 nudos según la calidad del carbón, la presión del vapor y el estado de las calderas y del casco: la calidad del carbón importaba. [P] todo lo demás. **No usar «carbón de Cardiff» como dato** hasta verificarlo.
 
 ---
@@ -172,7 +172,7 @@ Todo este apartado es **propuesta** para T-022. Respeta ADR-007 (los recursos so
 |---|---|---|
 | `viveres` | Haciendas de valle y oasis | Víveres y forraje de los ejércitos |
 | `pesos` | Exportar salitre, guano, plata y cobre **por un puerto propio** | Los minerales valían por su exportación; el fisco vivía de ella |
-| `carbon` | Según Q-014 | Combustible de buques y calderas |
+| `carbon` | Suministro por mar (ADR-016): Chile, por el borde sur; Perú y Bolivia, importado con pesos | Combustible de buques, oficinas Shanks y condensadoras |
 | (agua) | Mejor como **mecánica de logística** (radio de aguadas y condensadoras), no como recurso acumulable | Coherente con unidades.md §6.3 («sin agua, munición ni desgaste en v1») |
 
 El salitre, el guano, la plata y el cobre **no** serían recursos acumulables, sino **cargas** que se convierten en pesos al embarcarse. [J] Así el mapa muestra las rutas y la guerra económica (bloqueo, corte del ferrocarril) tiene efecto, como en 1879.
@@ -189,13 +189,28 @@ El salitre, el guano, la plata y el cobre **no** serían recursos acumulables, s
 
 | Recurso | Edificio extractor | Animación | Ruta al puerto | Sitios del mapa |
 |---|---|---|---|---|
-| Salitre | **Oficina salitrera** (planta con chimenea, cachuchos, canchas, campamento) | Humo de la chimenea; operarios con barreta en el manto; montones blancos en las canchas | Carreta al tren o al puerto; tren salitrero | Cantones de Zapiga, Negreiros, La Noria, Pozo Almonte, Lagunas; Salar del Carmen; El Toco |
-| Guano | **Covadera** (rampa o manga de carga, sacos, barracas) | Operarios con pala y carretilla; sacos que bajan al muelle | Directo al muelle (la covadera está en la costa) | Pabellón de Pica, Huanillos, Punta de Lobos, Mejillones; Chincha según Q-015 |
-| Plata | **Mina de plata** (pique con cabria o malacate, desmonte, cancha) | Malacate girando; recua que sale | Recua de mulas a la costa (Antofagasta) | Caracoles (según Q-015); Corocoro y Tocopilla para el cobre |
+| Salitre | **Oficina de paradas** u **oficina Shanks** (ADR-017; ver §10.3.1) | Paradas: fogones con humo bajo, fondos y canchas pequeñas. Shanks: chimenea alta con humo, cachuchos, canchas grandes; en ambas, operarios con barreta en el manto | Carreta al tren o al puerto; tren salitrero | Cantones de Zapiga, Negreiros, La Noria, Pozo Almonte, Lagunas; Salar del Carmen; El Toco |
+| Guano | **Covadera** (rampa o manga de carga, sacos, barracas) | Operarios con pala y carretilla; sacos que bajan al muelle | Directo al muelle (la covadera está en la costa) | Pabellón de Pica, Huanillos, Punta de Lobos, Mejillones; Chincha con rendimiento muy bajo o nulo (ADR-017) |
+| Plata | **Mina de plata** (pique con cabria o malacate, desmonte, cancha) | Malacate girando; recua que sale | Recua de mulas a la costa (Antofagasta) | Caracoles con rendimiento bajo, en declive (ADR-017); Corocoro y Tocopilla para el cobre |
 | Cobre | **Mina de cobre** + **fundición** (horno y chimenea) | Humo de la fundición | Recua o carreta a Tocopilla, Chañaral, Caldera | Norte Chico, Tocopilla |
-| Carbón | Según **Q-014** (sin edificio extractor en la opción A) | Vapor carbonero que llega por el borde del mapa | Por mar a la **carbonera** del puerto | Valparaíso y puertos propios |
+| Carbón | **Sin edificio extractor** (ADR-016). En el puerto, una **carbonera** donde se recibe | Vapor carbonero que llega por el borde sur (Chile) o desde fuera del mapa (importación de Perú y Bolivia) | Por mar a la carbonera del puerto | Chile: Valparaíso y sus puertos; Perú y Bolivia: sus puertos, comprando con pesos |
 | Víveres | **Hacienda** (casas, cultivos, acequias) o **chacra de oasis** | Cultivo que cambia de color; carretas | Carreta al almacén o al puerto | Valles de Lima, Cañete, Ica, Moquegua, Tacna, Azapa, Aconcagua; oasis |
 | Agua | **Condensadora** en el puerto y **aguada/pozo** en el desierto | Caldera con humo; estanques | El agua no viaja como recurso: da un radio de abasto | Antofagasta, Iquique, Pisagua; aguadas de la ficha de geografía |
+
+#### 10.3.1 Los dos tipos de oficina salitrera (ADR-017)
+
+Reflejan que en 1879 convivían sistemas antiguos y el Shanks, que recién se volvía mayoritario (§2.3). Las cifras las fija T-022; aquí solo las diferencias con base histórica.
+
+| | Oficina de paradas | Oficina Shanks |
+|---|---|---|
+| Base histórica | Paradas a fuego directo (y, por simplificación, el vapor de Gamboni) | Shanks (Humberstone, 1876 o 1878) |
+| Costo y tiempo de construcción | Bajos | Altos |
+| Rendimiento | Bajo: solo aprovecha el caliche más rico [D] | Alto y estable: aprovecha más caliche y residuos [D] |
+| Combustible | Leña o combustible local; no consume carbón [D] (deforestó el tamarugal) | **Carbón** [D]: depende del suministro por mar (ADR-016) |
+| Aspecto | Fogones y fondos al aire libre, campamento de ranchos, sin chimenea industrial | Planta fija con chimenea alta, cachuchos, canchas grandes, campamento estable con pulpería |
+| Idea de juego [J] | Opción temprana y barata, que no depende del mar | Mejora (construcción nueva o mejora de la de paradas, a decidir en T-022) que premia controlar el carbón y el puerto |
+
+Asimilar el sistema de vapor de Gamboni a la oficina de paradas es una simplificación que añadió el historiador al redactar ADR-017. Si Feño prefiere otra cosa, se corrige.
 
 ### 10.4 Lo que cambia por bando (datos para T-022 y T-031) [I]
 
@@ -203,14 +218,14 @@ El salitre, el guano, la plata y el cobre **no** serían recursos acumulables, s
 - **Chile** controla el carbón (Lota, fuera del mapa) y, tras Pisagua, el salitre de Tarapacá.
 - **Perú** empieza con el salitre de Tarapacá, el guano y los valles agrícolas más ricos, pero depende del mar para el carbón y la exportación.
 
-### 10.5 Licencias creativas propuestas (no decididas)
+### 10.5 Licencias creativas (aceptadas por Feño)
 
 | Id | Licencia | Estado |
 |---|---|---|
-| L1 | Una sola oficina salitrera tipo Shanks para todas, aunque en 1879 convivían paradas, vapor y Shanks (§2.3) | **Q-015** |
-| L2 | Tiempos de extracción, transporte y embarque comprimidos (días o semanas → segundos o minutos) | **Q-015** |
-| L3 | Yacimientos según su estado en 1879: Chincha casi agotada y Caracoles en declive | **Q-015** |
-| L4 | Representación del carbón de Lota y Coronel, fuera del mapa | **Q-014** |
+| — | Dos tipos de oficina salitrera, de paradas y Shanks (§10.3.1). Se **rechazó** la propuesta inicial L1 de una sola oficina tipo Shanks | Aceptada: **ADR-017** (Q-015, opción 3) |
+| L2 | Tiempos de extracción, transporte y embarque comprimidos (días o semanas → segundos o minutos) | Aceptada: **ADR-017** |
+| L3 | Yacimientos según su estado en 1879: Chincha casi agotada y Caracoles en declive | Aceptada: **ADR-017** |
+| L4 | Carbón de Lota y Coronel fuera del mapa, como suministro por mar (Chile por el borde sur; Perú y Bolivia lo importan con pesos) | Aceptada: **ADR-016** (Q-014, opción A) |
 | — | Las lupas (ADR-009, T-040) amplían ciudades y puertos; los edificios industriales van a tamaño real (ADR-009) | Ya decidido; no es nueva |
 
 ---
@@ -221,7 +236,8 @@ Prioridad sugerida: **1** = imprescindible para T-022 v1; **2** = deseable; **3*
 
 | # | Modelo | Partes que lo hacen reconocible | Prioridad | Referencia histórica |
 |---|---|---|---|---|
-| 1 | Oficina salitrera | Chimenea de ladrillo o fierro, cachuchos (estanques rectangulares de fierro), canchas blancas de secado, montones de caliche, casas del campamento | 1 | Fotografías de oficinas de Tarapacá en Memoria Chilena (las más cercanas son de ~1880–1889; Oficina Ramírez hacia 1880) |
+| 1a | Oficina salitrera Shanks | Chimenea de ladrillo o fierro, cachuchos (estanques rectangulares de fierro), canchas blancas de secado, montones de caliche, casas del campamento | 1 | Fotografías de oficinas de Tarapacá en Memoria Chilena (las más cercanas son de ~1880–1889; Oficina Ramírez hacia 1880) |
+| 1b | Oficina de paradas (ADR-017) | Fondos o calderas sobre fogones al aire libre, montones de caliche y leña, canchas pequeñas, ranchos; sin chimenea alta | 1 | Memoria Chilena («Explotación del salitre»); [P] imágenes de época |
 | 2 | Carreta salitrera de mulas | Carreta de dos ruedas grandes con tiro de varias mulas | 1 | Memoria Chilena |
 | 3 | Muelle de embarque con lanchas | Muelle de madera sobre pilotes, pescante, lanchas a remo con sacos | 1 | «Embarque de salitre en Pisagua» (1891), Memoria Chilena |
 | 4 | Covadera de guano | Rampa o manga de carga, sacos, barracas | 1 | Huanillos, Pabellón de Pica [P] fotos de época |
