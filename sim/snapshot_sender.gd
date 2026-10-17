@@ -66,6 +66,9 @@ var last_max_combat_age: int = 0
 ## Máximo error previsto (pasos de 0,125 m) entre las entidades visibles, antes de enviar.
 var last_max_error_q: int = 0
 var full_resets: int = 0
+## true si tras el último build() el cliente conoce exactamente las entidades que ve (no quedaron
+## apariciones ni bajas aplazadas por el tope).
+var last_synced: bool = false
 ## Registros elegidos que el tope exacto tuvo que recortar en el último build().
 var last_cap_cuts: int = 0
 var total_bytes: int = 0
@@ -385,6 +388,9 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 	var records: int = 0
 	var deferred: int = 0
 	var cut: int = 0
+	# Apariciones o bajas que no entraron: el conjunto de entidades del cliente todavía no es el
+	# que ve (sin ellas, la cabecera lleva SYNCED_FLAG).
+	var set_pending: int = 0
 
 	# 1) REMOVED (motivo en rbits).
 	for k: int in nr:
@@ -406,6 +412,7 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 			chosen[k] = 0
 			deferred += 1
 			cut += 1
+			set_pending += 1
 			continue
 		while d >= 0x80:
 			acc |= ((d & 0x7F) | 0x80) << nacc
@@ -428,6 +435,8 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 			continue
 		if chosen[k] == 0:
 			deferred += 1
+			if rk[k] == _K_APPEAR:
+				set_pending += 1
 			continue
 		var wi: int = rwi[k]
 		var nwd: int = ww[wi]
@@ -539,6 +548,8 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 			chosen[k] = 0
 			deferred += 1
 			cut += 1
+			if rk[k] == _K_APPEAR:
+				set_pending += 1
 			continue
 		# id (varint)
 		while d >= 0x80:
@@ -586,7 +597,8 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 	var pc_byte: int = SnapshotCodec.PART_COUNT_BIT >> 3
 	for pi: int in packets.size():
 		packets[pi][pc_byte - 1] = pi
-		packets[pi][pc_byte] = packets.size()
+		packets[pi][pc_byte] = packets.size() | (SnapshotCodec.SYNCED_FLAG if set_pending == 0 else 0)
+	last_synced = set_pending == 0
 	if cut > 0:
 		_slack_bytes = mini(_slack_bytes + 32 + cut * 8, _SLACK_MAX)
 	else:

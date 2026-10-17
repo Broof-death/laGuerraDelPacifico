@@ -6,9 +6,12 @@ extends RefCounted
 ## - Atiende uno o más Transport (en el anfitrión: ENet para los remotos y LocalTransport para su
 ##   propio cliente). Cada conexión saluda con HELLO; si la versión y la huella de GameData
 ##   coinciden y hay lugar, recibe un player_id (1..max_players) y WELCOME.
-## - Comandos: el player_id sale de la conexión, nunca del paquete. Límite de 8 KB/s por jugador
-##   (bytes de comandos) y de 30 comandos/s (CommandQueue), ambos con ventana de tiempo real.
-##   Los rechazos vuelven como COMMAND_REJECTED(seq, motivo) por el canal de eventos.
+## - Comandos: el player_id sale de la conexión, nunca del paquete. Límite de 8 KB/s por conexión
+##   sobre TODO lo que manda el cliente (HELLO, COMMAND y ACK; los acks son ~50 B/s) y de 30
+##   comandos/s (CommandQueue), ambos con ventana de tiempo real. Pasado el límite, los COMMAND se
+##   rechazan con RATE_LIMITED y los HELLO y ACK se descartan. Los rechazos vuelven como
+##   COMMAND_REJECTED(seq, motivo) por el canal de eventos. last_seq (en la cabecera de los
+##   snapshots) es el seq más alto que llegó, aunque el comando se haya rechazado.
 ## - Snapshots a 10 Hz fijos: en los ticks pares se cuantiza el mundo una vez (SnapshotWorld) y se
 ##   arma el snapshot de la mitad de los clientes; en el tick siguiente, el de la otra mitad, con
 ##   la misma foto (ADR-006: los jugadores se reparten entre los 2 ticks del ciclo).
@@ -181,14 +184,18 @@ func _on_packet(peer_id: int, data: PackedByteArray, t: Transport) -> void:
 	var c := _find(t, peer_id)
 	if c == null:
 		return
-	match NetProtocol.msg_type(data):
+	var over_limit: bool = _count_bytes(c, data.size())
+	var msg: int = NetProtocol.msg_type(data)
+	if over_limit and msg != NetProtocol.Msg.COMMAND:
+		return
+	match msg:
 		NetProtocol.Msg.ACK:
 			if c.sender != null:
 				var tick: int = NetProtocol.decode_ack(data)
 				if tick >= 0:
 					c.sender.on_ack(tick, sim.tick)
 		NetProtocol.Msg.COMMAND:
-			_on_command(c, data)
+			_on_command(c, data, over_limit)
 		NetProtocol.Msg.HELLO:
 			_on_hello(c, data)
 
@@ -225,24 +232,30 @@ func _free_player_id() -> int:
 	return 0
 
 
-func _on_command(c: Conn, data: PackedByteArray) -> void:
-	if c.player_id == 0:
-		return
+## Suma `n` bytes a la ventana de 1 s de la conexión. Devuelve true si se pasó del límite.
+func _count_bytes(c: Conn, n: int) -> bool:
 	var now: int = now_msec()
 	if now - c.cmd_window_start >= SimConstants.RATE_LIMIT_WINDOW_MSEC:
 		c.cmd_window_start = now
 		c.cmd_bytes = 0
-	c.cmd_bytes += data.size()
+	c.cmd_bytes += n
+	return c.cmd_bytes > SimConstants.RATE_LIMIT_BYTES_PER_SEC
+
+
+func _on_command(c: Conn, data: PackedByteArray, over_limit: bool) -> void:
+	if c.player_id == 0:
+		return
 	var cmd := CommandCodec.decode(data)
 	if cmd == null:
 		_send_rejected(c, 0, Command.Reject.MALFORMED)
 		return
+	# last_seq avanza aunque el comando se rechace (por límite o por validación).
 	c.last_seq = maxi(c.last_seq, cmd.seq)
-	if c.cmd_bytes > SimConstants.RATE_LIMIT_BYTES_PER_SEC:
+	if over_limit:
 		_send_rejected(c, cmd.seq, Command.Reject.RATE_LIMITED)
 		return
 	# Los rechazos de validación quedan en la cola y se envían en _flush_rejections().
-	sim.submit_command(c.player_id, cmd, now)
+	sim.submit_command(c.player_id, cmd, now_msec())
 
 
 func _flush_rejections() -> void:

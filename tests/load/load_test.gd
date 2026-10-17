@@ -22,11 +22,15 @@ extends Node
 ## Salida JSON en la consola (línea "LOAD_RESULT {...}") y en user://load/. Código de salida 0 si
 ## cumple los umbrales del escenario, 1 si no.
 
-## Umbrales de ADR-006 punto 10. battle_kbps y combat_age_ms < 0 = sin umbral.
+## Sincronización inicial (desde el saludo hasta que todos los fantasmas conocen todo lo que ven,
+## SnapshotSender.last_synced): umbral propio de T-005, no de ADR-006. Cota física: cada
+## aparición ocupa ~12,4 B y el tope es de 4 KB por snapshot a 10 Hz, así que 3000 visibles
+## necesitan >= 0,9 s y 4500, >= 1,4 s; el umbral deja margen para la pérdida y los acks.
+## Umbrales de ADR-006 punto 10. battle_kbps, combat_age_ms y sync_ms < 0 = sin umbral.
 const SCENARIOS: Dictionary = {
-	"S1": {"players": 2, "units": 500, "p95_ms": 6.0, "p99_ms": -1.0, "battle_kbps": -1.0, "combat_age_ms": -1.0},
-	"S2": {"players": 6, "units": 500, "p95_ms": 20.0, "p99_ms": 35.0, "battle_kbps": 25.0, "combat_age_ms": 300.0},
-	"S3": {"players": 6, "units": 750, "p95_ms": 35.0, "p99_ms": -1.0, "battle_kbps": -1.0, "combat_age_ms": 500.0},
+	"S1": {"players": 2, "units": 500, "p95_ms": 6.0, "p99_ms": -1.0, "battle_kbps": -1.0, "combat_age_ms": -1.0, "sync_ms": -1.0},
+	"S2": {"players": 6, "units": 500, "p95_ms": 20.0, "p99_ms": 35.0, "battle_kbps": 25.0, "combat_age_ms": 300.0, "sync_ms": 2000.0},
+	"S3": {"players": 6, "units": 750, "p95_ms": 35.0, "p99_ms": -1.0, "battle_kbps": -1.0, "combat_age_ms": 500.0, "sync_ms": 2500.0},
 }
 ## Tope de bajada por jugador (ADR-006: 40 KB/s; con el tope de 4 KB a 10 Hz no se puede pasar).
 const MAX_KBPS: float = 40.0
@@ -130,6 +134,7 @@ func _ready() -> void:
 	cur_bytes.resize(players)
 	var sent_before := PackedInt32Array()
 	sent_before.resize(players)
+	var sync_tick: int = -1
 
 	var wall_start := Time.get_ticks_usec()
 	for t: int in ticks:
@@ -161,6 +166,13 @@ func _ready() -> void:
 				snap_deferred.append(conn.sender.last_deferred)
 				max_packet = maxi(max_packet, conn.sender.last_max_packet_bytes)
 				cap_cuts += conn.sender.last_cap_cuts
+		if sync_tick < 0 and not _ghosts.is_empty():
+			var all_synced: bool = true
+			for p: int in players:
+				var conn := _server.get_conn(p + 1)
+				all_synced = all_synced and conn.sender.snapshots_sent > 0 and conn.sender.last_synced
+			if all_synced:
+				sync_tick = t
 		# Red y fantasmas (fuera del tiempo del tick).
 		_net.advance(1000 / SimConstants.TICK_RATE)
 		_server.manual_msec = _net.now_msec()
@@ -180,6 +192,8 @@ func _ready() -> void:
 	var wall_s: float = (Time.get_ticks_usec() - wall_start) / 1_000_000.0
 	var net_result := _net_stats(players, snap_bytes, snap_age, snap_deferred, max_packet, cap_cuts,
 			second_bytes, battle_seconds, ghost_usec, loss)
+	if not _ghosts.is_empty():
+		net_result["initial_sync_ms"] = (sync_tick + 1) * 1000 / SimConstants.TICK_RATE if sync_tick >= 0 else -1
 
 	var result := {
 		"scenario": scenario,
@@ -230,6 +244,8 @@ func _ready() -> void:
 			if threshold["combat_age_ms"] > 0.0:
 				checks["combat_age"] = net_result["combat_age_ms"].get("max", 0) <= threshold["combat_age_ms"]
 			checks["ghosts_consistent"] = net_result["ghosts_consistent"]
+			if threshold["sync_ms"] > 0.0:
+				checks["initial_sync"] = net_result["initial_sync_ms"] >= 0 and net_result["initial_sync_ms"] <= threshold["sync_ms"]
 		for k: String in checks:
 			passed = passed and checks[k]
 		result["checks"] = checks

@@ -28,6 +28,8 @@ var interpolate_enabled: bool = true
 ## Instante de dibujo en ticks del servidor (con decimales).
 var render_tick: float = 0.0
 var snapshot_bytes_received: int = 0
+## Entidades borradas al reconciliar tras un estado completo (bajas que no llegaron como REMOVED).
+var ghosts_removed: int = 0
 
 var _catalog_hash: int
 var _next_seq: int = 1
@@ -60,7 +62,8 @@ func send_command(cmd: Command) -> int:
 
 
 ## Último comando propio que el servidor confirmó haber recibido (para limpiar la respuesta
-## cosmética de las órdenes).
+## cosmética de las órdenes). Avanza aunque el comando se haya rechazado (validación o límite):
+## el rechazo llega aparte como command_rejected(seq, motivo).
 func last_confirmed_seq() -> int:
 	return receiver.last_seq
 
@@ -108,6 +111,8 @@ func _on_packet(_peer_id: int, data: PackedByteArray) -> void:
 			var part := receiver.receive(data)
 			if part != null:
 				state.apply_part(part)
+			if receiver.reconcile_tick >= 0:
+				ghosts_removed += state.reconcile(receiver.get_state(receiver.reconcile_tick), receiver.reconcile_tick)
 			if receiver.completed_tick >= 0:
 				transport.send(Transport.SERVER_PEER, Transport.Channel.SNAPSHOTS,
 						NetProtocol.encode_ack(receiver.completed_tick))

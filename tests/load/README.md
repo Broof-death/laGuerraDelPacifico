@@ -90,5 +90,9 @@ sincronización inicial); los KB/s por segundo cuentan todo.
   cliente todavía no recibió). Fuera de 0,5 m + medio paso: 0,02 % de las comprobaciones.
 - Los fantasmas quedaron idénticos bit a bit al estado que guardó el servidor, sin reenvíos completos.
 - El peor segundo (~40 KB/s) es la sincronización inicial (todas las apariciones con el tope de 4 KB).
+- Sincronización inicial (`initial_sync_ms`, desde el saludo hasta que todos los fantasmas conocen
+  todo lo que ven): S2 1450 ms (umbral propio de T-005: 2000 ms), S3 2050 ms (umbral 2500 ms). La
+  cota física con el tope de 4 KB es ~0,9 s para 3000 visibles y ~1,4 s para 4500 (~12,4 B por
+  aparición), así que 1 s no es alcanzable sin subir el tope o achicar la aparición.
 - Armado de snapshots: con dead reckoning la mezcla sigue recorriendo los 3000 visibles por cliente,
   pero se escriben muchos menos registros: ~8 ms por tick en S2 (antes ~11).

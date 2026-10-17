@@ -235,3 +235,40 @@ func test_client_state_dead_reckoning_and_smooth_correction() -> void:
 func test_command_log_and_queue_are_bounded() -> void:
 	assert_int(_server.sim.queue.max_log_entries).is_greater(0)
 	assert_int(CommandQueue.MAX_PENDING).is_greater(0)
+
+
+func test_full_resend_after_outage_leaves_no_ghosts() -> void:
+	# Más entidades de las que entran en un snapshot: el reenvío completo se reparte en varios.
+	_server.spawn_test_armies(2, 800, 60.0)
+	var a := _add_client()
+	_pump(80)
+	var total: int = _server.sim.store.count
+	assert_int(a.state.count).is_equal(total)
+	var sender := _server.get_conn(1).sender
+	assert_bool(sender.last_synced).is_true()
+	# Corte de 1,5 s en el canal unreliable (snapshots y acks): baja y salida de visión en medio.
+	_net.loss = 1.0
+	_pump(6)
+	var enemies := _ids_of(2)
+	var dead: int = enemies[0]
+	var gone: int = enemies[1]
+	_server.sim.remove_entity(dead)
+	var sg := _server.sim.store.slot_of(gone)
+	_server.sim.store.pos_x[sg] = 9500.0
+	_server.sim.store.pos_z[sg] = 9500.0
+	_pump(30)
+	assert_int(sender.full_resets).is_greater_equal(1)
+	# Durante el corte, el cliente todavía las tiene.
+	assert_int(a.state.slot_of(dead)).is_greater_equal(0)
+	assert_int(a.state.slot_of(gone)).is_greater_equal(0)
+	_net.loss = 0.0
+	_pump(80)
+	assert_bool(sender.last_synced).is_true()
+	assert_int(a.state.slot_of(dead)).is_equal(-1)
+	assert_int(a.state.slot_of(gone)).is_equal(-1)
+	assert_int(a.ghosts_removed).is_greater_equal(2)
+	assert_int(a.state.count).is_equal(total - 2)
+	var st := a.receiver.get_state(a.receiver.latest_complete_tick)
+	assert_int(st.size()).is_equal(total - 2)
+	for s: int in a.state.count:
+		assert_int(st.index_of(a.state.ids[s])).is_greater_equal(0)

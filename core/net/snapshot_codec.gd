@@ -20,7 +20,8 @@ extends RefCounted
 ##
 ## Paquete (<= 1200 B, decodificable por separado):
 ##   cabecera (19 B): Msg.SNAPSHOT 8 · tick 32 · base_tick 32 (NO_BASE = sin base) · parte 8 ·
-##     partes 8 · last_seq 32 (dato privado: último comando del jugador recibido) ·
+##     partes 7 + SYNCED 1 · last_seq 32 (dato privado: seq más alto de los comandos del jugador
+##     que llegaron al servidor, aunque se hayan rechazado) ·
 ##     n_removed 16 · n_records 16
 ##   REMOVED: por baja, id (diferencia varint) + motivo 1 bit
 ##   registros: id (diferencia varint) + máscara de campos 8 bits + campos de la máscara, en este
@@ -42,6 +43,11 @@ const REMOVED_COUNT_BIT: int = PART_COUNT_BIT + 8 + 32
 const RECORD_COUNT_BIT: int = REMOVED_COUNT_BIT + 16
 ## base_tick cuando el snapshot no es delta (estado completo).
 const NO_BASE: int = 0xFFFFFFFF
+## Bit alto del byte "partes": tras este snapshot el cliente conoce exactamente las entidades que
+## ve (no quedaron apariciones ni bajas aplazadas por el tope). Sirve para saber cuándo terminó un
+## reenvío completo repartido en varios snapshots y limpiar lo que ya no existe.
+const SYNCED_FLAG: int = 0x80
+const PART_COUNT_MASK: int = 0x7F
 
 ## Máscara de campos de un registro.
 const FLAG_POS_DELTA: int = 0x01
@@ -104,6 +110,8 @@ class Part:
 	var base_tick: int
 	var part: int
 	var part_count: int
+	## Ver SYNCED_FLAG.
+	var synced: bool
 	var last_seq: int
 	var removed_ids := PackedInt32Array()
 	var removed_reasons := PackedByteArray()
@@ -248,7 +256,9 @@ static func decode_part(data: PackedByteArray, base: SnapshotState) -> Part:
 	p.tick = r.read_bits(32)
 	p.base_tick = r.read_bits(32)
 	p.part = r.read_bits(8)
-	p.part_count = r.read_bits(8)
+	var pc: int = r.read_bits(8)
+	p.part_count = pc & PART_COUNT_MASK
+	p.synced = (pc & SYNCED_FLAG) != 0
 	p.last_seq = r.read_bits(32)
 	var n_removed: int = r.read_bits(16)
 	var n_records: int = r.read_bits(16)
@@ -265,6 +275,8 @@ static func decode_part(data: PackedByteArray, base: SnapshotState) -> Part:
 		if d <= 0:
 			return null
 		last += d
+		if last > SimConstants.MAX_ENTITY_ID:
+			return null
 		p.removed_ids[i] = last
 		p.removed_reasons[i] = r.read_bits(1)
 	p.rec_ids.resize(n_records)
@@ -284,6 +296,8 @@ static func decode_part(data: PackedByteArray, base: SnapshotState) -> Part:
 		if d <= 0:
 			return null
 		last += d
+		if last > SimConstants.MAX_ENTITY_ID:
+			return null
 		p.rec_ids[i] = last
 		var mask: int = r.read_bits(8)
 		if r.error or mask == 0 or (mask & FLAG_RESERVED) != 0:

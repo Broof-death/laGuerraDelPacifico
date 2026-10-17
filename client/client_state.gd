@@ -42,6 +42,9 @@ var _sel := PackedInt32Array()
 var _corr_x := PackedFloat64Array()
 var _corr_z := PackedFloat64Array()
 var _last_render_tick: float = -1.0
+## Tick del último registro aplicado a cada slot (para no borrar en reconcile() lo que llegó en
+## partes más nuevas que el estado completo).
+var _touch := PackedInt32Array()
 ## id -> slot (-1 = no está).
 var _id_to_slot := PackedInt32Array()
 
@@ -69,8 +72,8 @@ func apply_part(p: SnapshotCodec.Part) -> void:
 		var vz: float = SnapshotCodec.vel_z8(v) * VS
 		var h: float = SnapshotCodec.dequantize_heading(SnapshotCodec.word_heading8(w))
 		if s < 0:
-			if p.rec_def[i] < 0:
-				continue  # entidad sin datos de aparición (no debería pasar)
+			if p.rec_def[i] < 0 or id <= 0 or id > SimConstants.MAX_ENTITY_ID:
+				continue  # entidad sin datos de aparición o id fuera de rango (no debería pasar)
 			s = _add(id, p.rec_def[i], p.rec_owner[i])
 			_set_traj(s * 2 + 1, ref, x, z, vx, vz, h)
 			_tr_n[s] = 1
@@ -99,6 +102,7 @@ func apply_part(p: SnapshotCodec.Part) -> void:
 					_sel[s] = _tr_t[_pick(s, _last_render_tick)]
 			elif ref == tb:
 				_tr_h[b] = h  # cambio de rumbo sin reanclar la posición
+		_touch[s] = maxi(_touch[s], p.tick)
 		action[s] = SnapshotCodec.word_action(w)
 		hp_ratio[s] = SnapshotCodec.dequantize_hp(SnapshotCodec.word_hp8(w))
 		progress[s] = p.rec_prog[i] / 255.0
@@ -124,11 +128,26 @@ func remove(id: int) -> void:
 			_set_traj(s * 2 + k, _tr_t[o], _tr_x[o], _tr_z[o], _tr_vx[o], _tr_vz[o], _tr_h[o])
 		_tr_n[s] = _tr_n[last]
 		_sel[s] = _sel[last]
+		_touch[s] = _touch[last]
 		_corr_x[s] = _corr_x[last]
 		_corr_z[s] = _corr_z[last]
 		_id_to_slot[ids[s]] = s
 	_id_to_slot[id] = -1
 	count = last
+
+
+## Borra las entidades que no están en `st` (el estado completo del tick `tick`, ver
+## SnapshotReceiver.reconcile_tick), salvo las que recibieron datos de un snapshot más nuevo.
+## Devuelve cuántas borró.
+func reconcile(st: SnapshotState, tick: int) -> int:
+	var removed: int = 0
+	var s: int = count - 1
+	while s >= 0:
+		if _touch[s] <= tick and st.index_of(ids[s]) < 0:
+			remove(ids[s])
+			removed += 1
+		s -= 1
+	return removed
 
 
 ## Ancla de la trayectoria más nueva: Vector3(x, z, tick ref).
@@ -236,6 +255,7 @@ func _add(id: int, p_def: int, p_owner: int) -> int:
 		_tr_h.resize(cap * 2)
 		_tr_n.resize(cap)
 		_sel.resize(cap)
+		_touch.resize(cap)
 		_corr_x.resize(cap)
 		_corr_z.resize(cap)
 	if id >= _id_to_slot.size():
@@ -246,5 +266,6 @@ func _add(id: int, p_def: int, p_owner: int) -> int:
 	ids[s] = id
 	def_index[s] = p_def
 	owner[s] = p_owner
+	_touch[s] = 0
 	_id_to_slot[id] = s
 	return s

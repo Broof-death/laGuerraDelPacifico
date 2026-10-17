@@ -12,6 +12,7 @@ const MAX_PENDING: int = 8
 
 class _Pending:
 	var part_count: int
+	var synced: bool
 	var base_tick: int
 	var received := PackedByteArray()
 	var parts: Array[SnapshotCodec.Part] = []
@@ -26,6 +27,13 @@ var last_seq: int = 0
 ## Tick completado por la última llamada a receive() (-1 si no completó ninguno): hay que
 ## enviarle un ack al servidor.
 var completed_tick: int = -1
+## Tick de un estado completo con el que hay que reconciliar ClientState (-1 si no hace falta en
+## esta llamada): el primer snapshot completo con SYNCED después de un estado sin base (conexión
+## o reenvío completo tras 1 s sin ack). Las bajas ocurridas durante el corte no llegan como
+## REMOVED (el servidor ya no tiene la base donde estaban), así que el cliente borra lo que no
+## está en ese estado.
+var reconcile_tick: int = -1
+var _resync_pending: bool = false
 
 var parts_received: int = 0
 var parts_rejected: int = 0
@@ -44,6 +52,7 @@ var _empty := SnapshotState.new()
 ## registros de actualización; -1 si no se conocen) o null si se descarta.
 func receive(data: PackedByteArray) -> SnapshotCodec.Part:
 	completed_tick = -1
+	reconcile_tick = -1
 	var hdr := SnapshotCodec.read_header(data)
 	if hdr.is_empty():
 		parts_rejected += 1
@@ -66,6 +75,7 @@ func receive(data: PackedByteArray) -> SnapshotCodec.Part:
 	if pend == null:
 		pend = _Pending.new()
 		pend.part_count = p.part_count
+		pend.synced = p.synced
 		pend.base_tick = base_tick
 		pend.received.resize(p.part_count)
 		pend.parts.resize(p.part_count)
@@ -171,6 +181,11 @@ func _complete(tick: int, pend: _Pending, base: SnapshotState) -> void:
 		_ring.erase(_ring_ticks[0])
 		_ring_ticks.remove_at(0)
 	latest_complete_tick = tick
+	if pend.base_tick == SnapshotCodec.NO_BASE:
+		_resync_pending = true
+	if _resync_pending and pend.synced:
+		_resync_pending = false
+		reconcile_tick = tick
 	completed_tick = tick
 	snapshots_completed += 1
 	for t: int in _pending.keys():
