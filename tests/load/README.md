@@ -25,8 +25,8 @@ godot --headless --path . res://tests/load/load_test.tscn -- --players=6 --units
   decodificación de los fantasmas se mide aparte (`ghost_decode_ms_per_tick`, los 6 juntos).
 - Red: bytes por snapshot, paquete más grande, KB/s por jugador (media, media en los segundos de
   batalla, con >= 25 % de entidades con objetivo, y peor segundo), antigüedad máxima de una entidad
-  en combate con cambios pendientes (ticks desde que la copia del cliente era exacta) y si el estado
-  de cada fantasma coincide bit a bit con el que guardó el servidor.
+  en combate desactualizada en el cliente, error del dead reckoning de cada fantasma frente a la
+  posición real, y si el estado de cada fantasma coincide bit a bit con el que guardó el servidor.
 
 ## Umbrales (ADR-006)
 
@@ -60,28 +60,35 @@ Qué incluye el tick hoy: comandos, movimiento lineal con grupos de movimiento, 
 SpatialGrid y adquisición de objetivos a 5 Hz escalonada. Todavía faltan evitación local, rutas,
 daño, producción, visibilidad (T-014) y los snapshots (T-005), que ADR-006 estima en 5-8 ms.
 
-### T-005: tick con snapshots y red (17-10-2026)
+### T-005, primera versión (sin dead reckoning): no cumplía la red en S2
 
-Mismo PC y binario. Semilla 1, 120 s simulados, 2 % de pérdida, 6 fantasmas (2 en S1).
+Con delta de posición contra la base y sin velocidad, S2 daba tick p95 12,9 ms, snapshots siempre
+llenos (4076 B), 39,7 KB/s de media en batalla y antigüedad en combate p50 400 / máx. 1100 ms:
+los 3000 visibles se mueven sin parar y cada uno costaba ~4 B en CADA snapshot. Luis eligió
+dead reckoning (Q-016).
 
-| Escenario | tick p50 | tick p95 | tick p99 | tick máx | snapshots p95 | bytes/snapshot máx | paquete máx | KB/s batalla (media) | peor segundo | antigüedad combate p50 / p95 / máx | Cumple |
+### T-005 con dead reckoning (17-10-2026)
+
+Mismo PC y binario. Semilla 1, 120 s simulados, 2 % de pérdida, 6 fantasmas (2 en S1). Umbral
+del dead reckoning: 0,5 m. Las estadísticas por snapshot empiezan a los 3 s (después de la
+sincronización inicial); los KB/s por segundo cuentan todo.
+
+| Escenario | tick p50 | tick p95 | tick p99 | tick máx | snapshots p95 | bytes/snapshot p50 / p95 / máx | KB/s media en batalla | peor segundo | antigüedad combate p99 / máx | error DR p99 / máx | Cumple |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| S1 2 x 500 | 2,54 | 3,28 | 3,82 | 4,76 | 2,37 | 4068 | 1200 | 39,7 | 39,7 | 0 / 300 / 800 ms | Sí |
-| S2 6 x 500 | 11,06 | 12,90 | 14,17 | 20,96 | 11,38 | 4076 | 1200 | **39,7** | 39,8 | **400 / 600 / 1100 ms** | Tick sí; red NO |
-| S3 6 x 750 | 14,89 | 17,59 | 19,49 | 22,49 | 15,36 | 4079 | 1200 | 39,7 | 39,8 | **500 / 700 / 1800 ms** | Tick sí; antigüedad NO |
-| S2 + 300 bajas/s | 9,10 | 10,64 | 11,92 | 14,81 | 9,30 | 4096 | 1200 | 39,8 | 40,0 | 200 / 400 / 1100 ms | Tick sí; red NO |
-| S2 radio 1500 m (sin batalla en 120 s) | 6,31 | 7,38 | 8,54 | 12,13 | 5,59 | 2056 | 1200 | (sin batalla) 20,0 de media | 23,0 | — | Sí |
+| S1 2 x 500 | 1,74 | 2,40 | 2,75 | 3,56 | 1,54 | 66 / 328 / 715 | 1,0 | 13,5 | 200 / 300 ms | 70 / 71 cm | Sí |
+| S2 6 x 500 | 8,29 | 9,85 | 10,94 | 12,96 | 8,42 | 172 / 916 / 1961 | **3,3** | 39,5 (sincronización inicial) | **200 / 300 ms** | 90 / 120 cm | **Sí** |
+| S3 6 x 750 | 13,47 | 19,12 | 20,21 | 21,75 | 16,71 | 263 / 1075 / 2029 | 4,4 | 39,7 (sincronización inicial) | 200 / 400 ms | 87 / 130 cm | Sí (500 ms) |
+| S2 + 300 bajas/s | 9,90 | 13,43 | 14,17 | 16,67 | 11,79 | 575 / 1329 / 3332 | 7,6 | 39,5 | 200 / 500 ms | 92 / 123 cm | Red sí; antigüedad 500 ms (sin umbral propio) |
+| S2 radio 1500 m (sin batalla en 120 s) | 5,32 | 8,61 | 8,91 | 10,55 | 6,20 | 42 / 141 / 1030 | (sin batalla) 0,6 de media | 6,8 | — | 57 / 57 cm | Sí |
 
-- El tope de 4 KB y los paquetes de 1200 B se cumplen siempre; por eso ningún segundo pasa de 40 KB/s.
-  Los fantasmas quedaron coherentes con el servidor en todas las corridas, sin reenvíos completos.
-- El armado de snapshots cuesta ~3 ms por cliente (mezcla 0,9, selección 0,4, escritura 1,0 y
-  estado 0,6 ms con 3000 visibles) más ~1,8 ms por ciclo para cuantizar el mundo. Con 3 clientes por
-  tick queda en ~11 ms de los 20 ms, dentro de la estimación de ADR-006 (5-8 ms) por arriba.
-- Por qué S2 no cumple la media de 25 KB/s ni los 300 ms: en este escenario los 6 ejércitos están
-  siempre a la vista de todos (3000 visibles, ADR-006 supone 1500-2000) y SIEMPRE en movimiento (no
-  hay combate que los detenga). Cada registro en movimiento ocupa ~4 B (id 1 B, máscara 1 B, delta
-  2 B), así que harían falta ~12 KB por snapshot; con el tope de 4 KB entran ~1000 de ~3000 cambios
-  y cada unidad se actualiza cada ~3 snapshots. La media de 25 KB/s exige <= 2,5 KB por snapshot, es
-  decir <= ~600 unidades en movimiento a la vista. Queda como pregunta para el arquitecto (ver T-005).
-- La decodificación de los 6 fantasmas juntos cuesta ~14 ms por tick (~2,4 ms por cliente y
-  snapshot), fuera del tiempo del servidor.
+- Antigüedad en combate: ticks desde que la copia del cliente estaba al día (error previsto dentro
+  de 0,5 m y vida/acción iguales), medida en el servidor contra el último snapshot confirmado; es
+  pesimista, porque con un ack perdido el cliente ya puede tener el dato. Los máximos de 400-500 ms
+  coinciden con 3 snapshots seguidos sin confirmar por la pérdida simulada del 2 %.
+- Error DR: una vez por segundo, para cada fantasma, la posición que predice su último estado
+  completo frente a la posición real en el tick ACTUAL del servidor (incluye los 1-2 ticks que el
+  cliente todavía no recibió). Fuera de 0,5 m + medio paso: 0,02 % de las comprobaciones.
+- Los fantasmas quedaron idénticos bit a bit al estado que guardó el servidor, sin reenvíos completos.
+- El peor segundo (~40 KB/s) es la sincronización inicial (todas las apariciones con el tope de 4 KB).
+- Armado de snapshots: con dead reckoning la mezcla sigue recorriendo los 3000 visibles por cliente,
+  pero se escriben muchos menos registros: ~8 ms por tick en S2 (antes ~11).

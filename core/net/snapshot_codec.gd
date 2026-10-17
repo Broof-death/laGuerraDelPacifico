@@ -1,13 +1,20 @@
 class_name SnapshotCodec
 extends RefCounted
-## Formato binario de los snapshots (ADR-006 punto 5, ADR-009 punto 2). Escritura por bits con
-## BitWriter; nunca var_to_bytes. Lo comparten el servidor (SnapshotSender, en sim/) y el cliente
-## (SnapshotReceiver).
+## Formato binario de los snapshots (ADR-006 punto 5 con la enmienda de dead reckoning de T-005,
+## ADR-009 punto 2). Escritura por bits; nunca var_to_bytes. Lo comparten el servidor
+## (SnapshotSender, en sim/) y el cliente (SnapshotReceiver, ClientState).
+##
+## Dead reckoning: cada entidad que el cliente conoce tiene una TRAYECTORIA (posición cuantizada,
+## velocidad cuantizada y tick de referencia "ref"). El cliente predice la posición en el tick t
+## como predict_q(pos, vel, t - ref), con aritmética entera idéntica en los dos lados. El servidor
+## solo reenvía la trayectoria ("ancla") cuando el error previsto supera DR_THRESHOLD_Q, cuando
+## cambia la velocidad cuantizada, o como refresco de seguridad (DR_REFRESH_TICKS).
 ##
 ## Cuantización:
 ##   posición absoluta x, z: 20 bits por eje sobre el mundo de 131 072 m centrado (paso 0,125 m)
-##   posición delta respecto de la base confirmada: 2 x 8 bits con signo, paso 0,25 m (±31,75 m);
-##     si no alcanza, se envía absoluta
+##   posición delta respecto de la POSICIÓN PREDICHA desde la base: 2 x 8 bits con signo, paso
+##     0,25 m (±31,75 m); si no alcanza, se envía absoluta
+##   velocidad: 2 x 8 bits con signo, paso 0,125 m/s (±15,9 m/s); va siempre junto a la posición
 ##   rumbo 8 bits (1,4°) · vida 8 bits (fracción de max_hp) · acción 4 bits
 ##   progreso 8 bits (solo si la acción lo usa) · def_index 10 bits y dueño 4 bits al aparecer
 ##
@@ -16,9 +23,12 @@ extends RefCounted
 ##     partes 8 · last_seq 32 (dato privado: último comando del jugador recibido) ·
 ##     n_removed 16 · n_records 16
 ##   REMOVED: por baja, id (diferencia varint) + motivo 1 bit
-##   registros: id (diferencia varint) + máscara de campos 8 bits + campos de la máscara.
-##     Con FLAG_APPEAR el registro es completo: def 10, dueño 4, x 20, z 20, rumbo 8, vida 8,
-##     acción 4 [progreso 8].
+##   registros: id (diferencia varint) + máscara de campos 8 bits + campos de la máscara, en este
+##     orden: [delta 8+8 | absoluta 20+20 | nada si es FLAG_POS_PREDICTED] [velocidad 8+8 si hay
+##     posición] [rumbo 8] [vida 8]
+##     [acción 4] [progreso 8].
+##     Con FLAG_APPEAR el registro es completo: def 10, dueño 4, x 20, z 20, velocidad 8+8,
+##     rumbo 8, vida 8, acción 4 [progreso 8].
 ##   Las diferencias de id empiezan de 0 en cada paquete y en cada sección.
 ## Un snapshot son todas las partes con el mismo tick; el total no pasa de MAX_SNAPSHOT_BYTES.
 
@@ -36,6 +46,9 @@ const NO_BASE: int = 0xFFFFFFFF
 ## Máscara de campos de un registro.
 const FLAG_POS_DELTA: int = 0x01
 const FLAG_POS_ABS: int = 0x02
+## DELTA y ABS juntos: reanclaje en la posición que predice el cliente (no viaja posición, solo
+## la velocidad nueva). Se usa cuando el error es menor que la mitad del umbral.
+const FLAG_POS_PREDICTED: int = FLAG_POS_DELTA | FLAG_POS_ABS
 const FLAG_HEADING: int = 0x04
 const FLAG_HP: int = 0x08
 const FLAG_ACTION: int = 0x10
@@ -53,6 +66,21 @@ const DELTA_BITS: int = 8
 const DELTA_LIMIT: int = 127
 const DELTA_QUANTA: int = 2
 
+## Velocidad: 8 bits con signo por eje, paso de 0,125 m/s.
+const VEL_STEP: float = 0.125
+const VEL_LIMIT: int = 127
+## Desplazamiento por tick de 1 paso de velocidad, en pasos de posición:
+## 0,125 m/s * 0,05 s / 0,125 m = 1/20. predict_q divide por esto (entero, redondeando).
+const VEL_TICKS_PER_QUANTUM: int = 20
+
+## Umbral del dead reckoning: error previsto máximo antes de reenviar, en pasos de 0,125 m
+## (4 = 0,5 m: del orden del tamaño de una unidad de infantería vista desde la cámara RTS).
+const DR_THRESHOLD_Q: int = 4
+const DR_THRESHOLD_Q2: int = DR_THRESHOLD_Q * DR_THRESHOLD_Q
+const DR_THRESHOLD_M: float = DR_THRESHOLD_Q * 0.125
+## Refresco de seguridad: una trayectoria no se deja sin reanclar más de 10 s.
+const DR_REFRESH_TICKS: int = 10 * 20
+
 ## Disposición de la palabra de estado (int de 64 bits, 60 usados).
 const QX_SHIFT: int = 0
 const QZ_SHIFT: int = 20
@@ -69,7 +97,8 @@ const OWNER_BITS: int = 4
 const ACTION_BITS: int = 4
 
 
-## Una parte decodificada (un paquete). Los registros traen la palabra completa ya reconstruida.
+## Una parte decodificada (un paquete). Los registros traen el estado completo ya reconstruido:
+## palabra, velocidad empaquetada (pack_vel) y tick de referencia de la trayectoria.
 class Part:
 	var tick: int
 	var base_tick: int
@@ -80,6 +109,8 @@ class Part:
 	var removed_reasons := PackedByteArray()
 	var rec_ids := PackedInt32Array()
 	var rec_words := PackedInt64Array()
+	var rec_vel := PackedInt32Array()
+	var rec_ref := PackedInt32Array()
 	var rec_prog := PackedByteArray()
 	## 1 si el registro es una aparición (trae def y dueño).
 	var rec_appear := PackedByteArray()
@@ -113,6 +144,34 @@ static func word_action(w: int) -> int:
 	return (w >> ACTION_SHIFT) & ACTION_MASK
 
 
+## Velocidad (m/s) -> paso con signo de 8 bits.
+static func quantize_vel(v: float) -> int:
+	return clampi(int(roundf(v / VEL_STEP)), -VEL_LIMIT, VEL_LIMIT)
+
+
+## Dos pasos con signo -> 16 bits (x en los 8 bajos).
+static func pack_vel(vx8: int, vz8: int) -> int:
+	return (vx8 & 0xFF) | ((vz8 & 0xFF) << 8)
+
+
+static func vel_x8(v: int) -> int:
+	var x: int = v & 0xFF
+	return x - 256 if x >= 128 else x
+
+
+static func vel_z8(v: int) -> int:
+	var z: int = (v >> 8) & 0xFF
+	return z - 256 if z >= 128 else z
+
+
+## Posición predicha (en pasos de 0,125 m) tras `dticks` ticks con velocidad v8 (pasos de
+## 0,125 m/s). Entera y con redondeo simétrico: da lo mismo en servidor y cliente.
+static func predict_q(q: int, v8: int, dticks: int) -> int:
+	var n: int = v8 * dticks
+	var d: int = (n + (10 if n >= 0 else -10)) / VEL_TICKS_PER_QUANTUM
+	return clampi(q + d, 0, Q_MASK)
+
+
 ## Rumbo en radianes -> 8 bits (1,4°).
 static func quantize_heading(h: float) -> int:
 	return int(roundf(h * (256.0 / TAU))) & BYTE_MASK
@@ -144,33 +203,15 @@ static func action_uses_progress(_action: int) -> bool:
 	return false
 
 
-## Bits de la carga de una aparición (sin id ni máscara).
-static func appear_payload_bits(action: int) -> int:
-	return DEF_BITS + OWNER_BITS + 2 * MapGrid.QUANT_BITS + 8 + 8 + ACTION_BITS \
+## Bits de la carga de una aparición (sin id; con la máscara).
+static func appear_bits(action: int) -> int:
+	return 8 + DEF_BITS + OWNER_BITS + 2 * MapGrid.QUANT_BITS + 16 + 8 + 8 + ACTION_BITS \
 			+ (8 if action_uses_progress(action) else 0)
 
 
-## Bits de la carga de una actualización según su máscara (sin id ni máscara).
-static func update_payload_bits(mask: int) -> int:
-	var b: int = 0
-	if mask & FLAG_POS_DELTA:
-		b += 2 * DELTA_BITS
-	if mask & FLAG_POS_ABS:
-		b += 2 * MapGrid.QUANT_BITS
-	if mask & FLAG_HEADING:
-		b += 8
-	if mask & FLAG_HP:
-		b += 8
-	if mask & FLAG_ACTION:
-		b += ACTION_BITS
-	if mask & FLAG_PROGRESS:
-		b += 8
-	return b
+# --- Escritura (cabecera; los registros los escribe SnapshotSender en línea) --------------------
 
-
-# --- Escritura ---------------------------------------------------------------------------------
-
-## Escribe la cabecera de una parte; "partes", n_removed y n_records se rellenan con patch_bits.
+## Escribe la cabecera de una parte; "partes", n_removed y n_records se rellenan al final.
 static func write_header(w: BitWriter, tick: int, base_tick: int, part: int, last_seq: int) -> void:
 	w.write_bits(NetProtocol.Msg.SNAPSHOT, 8)
 	w.write_bits(tick, 32)
@@ -180,41 +221,6 @@ static func write_header(w: BitWriter, tick: int, base_tick: int, part: int, las
 	w.write_bits(last_seq, 32)
 	w.write_bits(0, 16)
 	w.write_bits(0, 16)
-
-
-## Escribe una aparición completa (después del id).
-static func write_appear(w: BitWriter, word: int, prog8: int, def_index: int, owner: int) -> void:
-	w.write_bits(FLAG_APPEAR, 8)
-	w.write_bits(def_index, DEF_BITS)
-	w.write_bits(owner, OWNER_BITS)
-	w.write_bits(word & Q_MASK, 20)
-	w.write_bits((word >> QZ_SHIFT) & Q_MASK, 20)
-	w.write_bits((word >> HEADING_SHIFT) & BYTE_MASK, 8)
-	w.write_bits((word >> HP_SHIFT) & BYTE_MASK, 8)
-	var action: int = (word >> ACTION_SHIFT) & ACTION_MASK
-	w.write_bits(action, ACTION_BITS)
-	if action_uses_progress(action):
-		w.write_bits(prog8, 8)
-
-
-## Escribe una actualización (después del id). `word` es el resultado que tendrá el cliente;
-## `base_word` la base confirmada (para el delta de posición).
-static func write_update(w: BitWriter, mask: int, word: int, base_word: int, prog8: int) -> void:
-	w.write_bits(mask, 8)
-	if mask & FLAG_POS_DELTA:
-		w.write_bits(((word & Q_MASK) - (base_word & Q_MASK)) / DELTA_QUANTA, DELTA_BITS)
-		w.write_bits((((word >> QZ_SHIFT) & Q_MASK) - ((base_word >> QZ_SHIFT) & Q_MASK)) / DELTA_QUANTA, DELTA_BITS)
-	elif mask & FLAG_POS_ABS:
-		w.write_bits(word & Q_MASK, 20)
-		w.write_bits((word >> QZ_SHIFT) & Q_MASK, 20)
-	if mask & FLAG_HEADING:
-		w.write_bits((word >> HEADING_SHIFT) & BYTE_MASK, 8)
-	if mask & FLAG_HP:
-		w.write_bits((word >> HP_SHIFT) & BYTE_MASK, 8)
-	if mask & FLAG_ACTION:
-		w.write_bits((word >> ACTION_SHIFT) & ACTION_MASK, ACTION_BITS)
-	if mask & FLAG_PROGRESS:
-		w.write_bits(prog8, 8)
 
 
 # --- Lectura -----------------------------------------------------------------------------------
@@ -263,14 +269,15 @@ static func decode_part(data: PackedByteArray, base: SnapshotState) -> Part:
 		p.removed_reasons[i] = r.read_bits(1)
 	p.rec_ids.resize(n_records)
 	p.rec_words.resize(n_records)
+	p.rec_vel.resize(n_records)
+	p.rec_ref.resize(n_records)
 	p.rec_prog.resize(n_records)
 	p.rec_appear.resize(n_records)
 	p.rec_def.resize(n_records)
 	p.rec_owner.resize(n_records)
 	last = 0
+	var tick: int = p.tick
 	var base_ids := base.ids
-	var base_words := base.words
-	var base_prog := base.prog
 	var nb: int = base_ids.size()
 	for i: int in n_records:
 		var d: int = r.read_varint()
@@ -289,29 +296,42 @@ static func decode_part(data: PackedByteArray, base: SnapshotState) -> Part:
 			p.rec_owner[i] = r.read_bits(OWNER_BITS)
 			var qx: int = r.read_bits(20)
 			var qz: int = r.read_bits(20)
+			p.rec_vel[i] = r.read_bits(16)
 			var h8: int = r.read_bits(8)
 			var hp8: int = r.read_bits(8)
 			var action: int = r.read_bits(ACTION_BITS)
 			p.rec_words[i] = pack_word(qx, qz, h8, hp8, action)
 			p.rec_prog[i] = r.read_bits(8) if action_uses_progress(action) else 0
+			p.rec_ref[i] = tick
 			continue
 		var bi: int = base_ids.bsearch(last)
 		if bi >= nb or base_ids[bi] != last:
 			return null
-		var word: int = base_words[bi]
-		var prog8: int = base_prog[bi]
-		if mask & FLAG_POS_DELTA:
-			if mask & FLAG_POS_ABS:
-				return null
-			var dx: int = r.read_signed(DELTA_BITS)
-			var dz: int = r.read_signed(DELTA_BITS)
-			var qx2: int = clampi((word & Q_MASK) + dx * DELTA_QUANTA, 0, Q_MASK)
-			var qz2: int = clampi(((word >> QZ_SHIFT) & Q_MASK) + dz * DELTA_QUANTA, 0, Q_MASK)
+		var word: int = base.words[bi]
+		var vel: int = base.vel[bi]
+		var ref: int = base.ref[bi]
+		var prog8: int = base.prog[bi]
+		if mask & (FLAG_POS_DELTA | FLAG_POS_ABS):
+			var qx2: int
+			var qz2: int
+			if mask & FLAG_POS_DELTA:
+				# Delta respecto de la posición que el cliente predice para este tick (o la
+				# posición predicha tal cual, con FLAG_POS_PREDICTED).
+				var dt: int = tick - ref
+				var px: int = predict_q(word & Q_MASK, vel_x8(vel), dt)
+				var pz: int = predict_q((word >> QZ_SHIFT) & Q_MASK, vel_z8(vel), dt)
+				if (mask & FLAG_POS_PREDICTED) == FLAG_POS_PREDICTED:
+					qx2 = px
+					qz2 = pz
+				else:
+					qx2 = clampi(px + r.read_signed(DELTA_BITS) * DELTA_QUANTA, 0, Q_MASK)
+					qz2 = clampi(pz + r.read_signed(DELTA_BITS) * DELTA_QUANTA, 0, Q_MASK)
+			else:
+				qx2 = r.read_bits(20)
+				qz2 = r.read_bits(20)
 			word = (word & ~POS_MASK) | qx2 | (qz2 << QZ_SHIFT)
-		elif mask & FLAG_POS_ABS:
-			var qx3: int = r.read_bits(20)
-			var qz3: int = r.read_bits(20)
-			word = (word & ~POS_MASK) | qx3 | (qz3 << QZ_SHIFT)
+			vel = r.read_bits(16)
+			ref = tick
 		if mask & FLAG_HEADING:
 			word = (word & ~(BYTE_MASK << HEADING_SHIFT)) | (r.read_bits(8) << HEADING_SHIFT)
 		if mask & FLAG_HP:
@@ -321,6 +341,8 @@ static func decode_part(data: PackedByteArray, base: SnapshotState) -> Part:
 		if mask & FLAG_PROGRESS:
 			prog8 = r.read_bits(8)
 		p.rec_words[i] = word
+		p.rec_vel[i] = vel
+		p.rec_ref[i] = ref
 		p.rec_prog[i] = prog8
 	if r.error or r.bits_left() >= 8:
 		return null

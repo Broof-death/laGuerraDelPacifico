@@ -87,8 +87,7 @@ func _pos(id: int) -> Vector2:
 	var s := _client.state.slot_of(id)
 	if s < 0:
 		return Vector2.INF
-	var v := _client.state.latest_sample(s)
-	return Vector2(v.x, v.y)
+	return _client.state.predicted(s, _client.receiver.latest_tick)
 
 
 func _on_rejected(seq: int, reason: int) -> void:

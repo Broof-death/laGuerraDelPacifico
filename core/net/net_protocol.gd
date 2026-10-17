@@ -8,7 +8,7 @@ extends RefCounted
 ## Codificación binaria con BitWriter/BitReader; nunca var_to_bytes.
 
 ## Sube cada vez que cambia el formato de algún mensaje o del snapshot.
-const PROTOCOL_VERSION: int = 1
+const PROTOCOL_VERSION: int = 2
 
 enum Msg {
 	NONE = 0,

@@ -5,6 +5,8 @@ extends GdUnitTestSuite
 ## estado es idéntico, bit a bit, al que el servidor guardó para ese tick.
 
 const HALF_STEP: float = 0.0625
+## Error máximo de la predicción del cliente: umbral del dead reckoning + medio paso.
+const DR_BOUND: float = SnapshotCodec.DR_THRESHOLD_M + HALF_STEP + 0.001
 
 
 # --- Ayudas ------------------------------------------------------------------------------------
@@ -40,6 +42,23 @@ func _assert_same_state(a: SnapshotState, b: SnapshotState) -> void:
 	assert_array(a.ids).is_equal(b.ids)
 	assert_array(a.words).is_equal(b.words)
 	assert_array(a.prog).is_equal(b.prog)
+
+
+## Máximo error (m) entre la posición que predice el estado `st` (de tick `tick`) para ese mismo
+## tick y la posición real de la simulación.
+func _max_prediction_error(st: SnapshotState, tick: int, sim: Simulation) -> float:
+	var worst: float = 0.0
+	for i: int in st.size():
+		var s := sim.store.slot_of(st.ids[i])
+		if s < 0:
+			continue
+		var w: int = st.words[i]
+		var v: int = st.vel[i]
+		var dt: int = tick - st.ref[i]
+		var x := MapGrid.dequantize(SnapshotCodec.predict_q(SnapshotCodec.word_qx(w), SnapshotCodec.vel_x8(v), dt))
+		var z := MapGrid.dequantize(SnapshotCodec.predict_q(SnapshotCodec.word_qz(w), SnapshotCodec.vel_z8(v), dt))
+		worst = maxf(worst, Vector2(x - sim.store.pos_x[s], z - sim.store.pos_z[s]).length())
+	return worst
 
 
 func _step(sim: Simulation, n: int) -> void:
@@ -142,12 +161,8 @@ func test_delta_roundtrip_with_movement() -> void:
 		assert_int(t).is_equal(world.tick)
 		_assert_same_state(rx.get_state(t), tx.get_state(t))
 		tx.on_ack(t, sim.tick)
-	# Error de la posición con delta: <= un paso de 0,125 m + medio paso.
-	var st := rx.get_state(rx.latest_complete_tick)
-	for s: int in sim.store.count:
-		var i := st.index_of(sim.store.id[s])
-		var x := MapGrid.dequantize(SnapshotCodec.word_qx(st.words[i]))
-		assert_float(absf(x - sim.store.pos_x[s])).is_less_equal(0.1875 + 0.001)
+	# Dead reckoning: lo que predice el cliente queda dentro del umbral (+ medio paso).
+	assert_float(_max_prediction_error(rx.get_state(rx.latest_complete_tick), rx.latest_complete_tick, sim)).is_less_equal(DR_BOUND)
 
 
 func test_lost_acks_keep_old_base_and_stay_exact() -> void:
@@ -316,8 +331,7 @@ func test_combat_entities_get_priority_and_nobody_starves() -> void:
 		if k > 10:
 			max_age = maxi(max_age, tx.last_max_combat_age)
 	# Con el tope, las entidades en combate no esperan más de ~5 snapshots.
-	assert_int(max_age).is_greater(0)
-	assert_int(max_age).is_less_equal(10)
+	assert_int(max_age).is_less_equal(6)  # <= 300 ms
 
 
 func test_packet_loss_never_breaks_the_state() -> void:
@@ -386,3 +400,138 @@ func test_malformed_parts_are_rejected() -> void:
 	var delta := tx.build(_capture(sim), 0)
 	assert_object(rx.receive(delta[0])).is_null()
 	assert_int(rx.parts_without_base).is_equal(1)
+
+
+# --- Dead reckoning ----------------------------------------------------------------------------
+
+func test_velocity_roundtrip() -> void:
+	for v: float in [-15.0, -5.0, -0.06, 0.0, 0.07, 1.4, 5.0, 15.875]:
+		var q := SnapshotCodec.quantize_vel(v)
+		var packed := SnapshotCodec.pack_vel(q, -q)
+		assert_int(SnapshotCodec.vel_x8(packed)).is_equal(q)
+		assert_int(SnapshotCodec.vel_z8(packed)).is_equal(-q)
+		assert_float(absf(q * SnapshotCodec.VEL_STEP - v)).is_less_equal(SnapshotCodec.VEL_STEP / 2.0 + 0.001)
+	# predict_q: 5 m/s durante 20 ticks (1 s) = 5 m = 40 pasos, en los dos sentidos.
+	assert_int(SnapshotCodec.predict_q(1000, SnapshotCodec.quantize_vel(5.0), 20)).is_equal(1040)
+	assert_int(SnapshotCodec.predict_q(1000, SnapshotCodec.quantize_vel(-5.0), 20)).is_equal(960)
+	# Por el códec: la velocidad de la simulación llega al cliente.
+	var sim := _sim_with_block(1, 4, 1000.0, 1000.0)
+	var ids := PackedInt32Array()
+	for s: int in sim.store.count:
+		ids.append(sim.store.id[s])
+	sim.submit_command(1, Command.make_move(1, ids, Vector2(1200.0, 1000.0)))
+	_step(sim, 2)
+	var tx := SnapshotSender.new(1)
+	var rx := SnapshotReceiver.new()
+	var cs := ClientState.new()
+	for p: PackedByteArray in tx.build(_capture(sim), 0):
+		cs.apply_part(rx.receive(p))
+	var st := rx.get_state(rx.latest_complete_tick)
+	for i: int in st.size():
+		var s := sim.store.slot_of(st.ids[i])
+		assert_float(absf(SnapshotCodec.vel_x8(st.vel[i]) * SnapshotCodec.VEL_STEP - sim.store.vel_x[s])).is_less_equal(0.0626)
+		assert_float(absf(SnapshotCodec.vel_z8(st.vel[i]) * SnapshotCodec.VEL_STEP - sim.store.vel_z[s])).is_less_equal(0.0626)
+	# El cliente extrapola: 1 s después predice ~5 m más adelante.
+	var c0 := cs.slot_of(ids[0])
+	var p0 := cs.predicted(c0, rx.latest_complete_tick)
+	var p1 := cs.predicted(c0, rx.latest_complete_tick + 20)
+	assert_float(p1.x - p0.x).is_between(4.5, 5.5)
+
+
+func test_straight_line_sends_little_and_error_stays_bounded() -> void:
+	var sim := _sim_with_block(1, 50, 1000.0, 1000.0)
+	var ids := PackedInt32Array()
+	for s: int in sim.store.count:
+		ids.append(sim.store.id[s])
+	_step(sim, 2)
+	var tx := SnapshotSender.new(1)
+	var rx := SnapshotReceiver.new()
+	tx.on_ack(_deliver(rx, tx.build(_capture(sim), 0)), sim.tick)
+	sim.submit_command(1, Command.make_move(1, ids, Vector2(1400.0, 1300.0)))
+	var records: int = 0
+	var snaps: int = 0
+	for k: int in 100:  # 10 s en línea recta
+		_step(sim, 2)
+		var t := _deliver(rx, tx.build(_capture(sim), 0))
+		tx.on_ack(t, sim.tick)
+		assert_float(_max_prediction_error(rx.get_state(t), t, sim)).is_less_equal(DR_BOUND)
+		if k >= 5:
+			records += tx.last_records
+			snaps += 1
+	# En régimen, cada unidad se reancla como mucho cada ~1 s (error de cuantización de la
+	# velocidad), no en cada snapshot: menos de 0,15 registros por unidad y snapshot.
+	assert_float(float(records) / (snaps * 50)).is_less(0.15)
+
+
+func test_direction_change_forces_send() -> void:
+	var sim := _sim_with_block(1, 1, 1000.0, 1000.0)
+	var id: int = sim.store.id[0]
+	sim.submit_command(1, Command.make_move(1, PackedInt32Array([id]), Vector2(1100.0, 1000.0)))
+	_step(sim, 2)
+	var tx := SnapshotSender.new(1)
+	var rx := SnapshotReceiver.new()
+	for k: int in 6:
+		_step(sim, 2)
+		tx.on_ack(_deliver(rx, tx.build(_capture(sim), 0)), sim.tick)
+	# En línea recta y ya anclada: no se envía.
+	_step(sim, 2)
+	tx.on_ack(_deliver(rx, tx.build(_capture(sim), 0)), sim.tick)
+	assert_int(tx.last_records).is_equal(0)
+	# Gira 90°: el siguiente snapshot la reancla aunque el error todavía sea chico.
+	sim.submit_command(1, Command.make_move(2, PackedInt32Array([id]), Vector2(sim.store.pos_x[0], 1200.0)))
+	_step(sim, 2)
+	var pk := tx.build(_capture(sim), 0)
+	assert_int(tx.last_records).is_equal(1)
+	var part := SnapshotCodec.decode_part(pk[0], tx.get_state(tx.base_tick))
+	assert_int(part.rec_ref[0]).is_equal(sim.tick)
+	assert_int(SnapshotCodec.vel_z8(part.rec_vel[0])).is_equal(SnapshotCodec.quantize_vel(5.0))
+	# Y al detenerse también.
+	tx.on_ack(_deliver(rx, pk), sim.tick)
+	sim.submit_command(1, Command.make_stop(3, PackedInt32Array([id])))
+	_step(sim, 2)
+	tx.build(_capture(sim), 0)
+	assert_int(tx.last_records).is_equal(1)
+
+
+func test_no_divergence_with_20_percent_loss() -> void:
+	var sim := _sim_with_block(1, 300, 1000.0, 1000.0)
+	_sim_with_block(2, 300, 1050.0, 1000.0, sim)
+	var all := PackedInt32Array()
+	for s: int in sim.store.count:
+		all.append(sim.store.id[s])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var tx := SnapshotSender.new(1)
+	var rx := SnapshotReceiver.new()
+	var cs := ClientState.new()
+	for k: int in 150:
+		if k % 15 == 0:
+			for start: int in range(0, 300, 100):
+				sim.submit_command(1, Command.make_move(k, all.slice(start, start + 100), Vector2(rng.randf_range(800, 1300), rng.randf_range(800, 1300))))
+				sim.submit_command(2, Command.make_move(k, all.slice(300 + start, 400 + start), Vector2(rng.randf_range(800, 1300), rng.randf_range(800, 1300))))
+		_step(sim, 2)
+		for p: PackedByteArray in tx.build(_capture(sim), 0):
+			if rng.randf() < 0.2:
+				continue
+			var part := rx.receive(p)
+			if part != null:
+				cs.apply_part(part)
+			if rx.completed_tick >= 0:
+				_assert_same_state(rx.get_state(rx.completed_tick), tx.get_state(rx.completed_tick))
+				if rng.randf() >= 0.2:
+					tx.on_ack(rx.completed_tick, sim.tick)
+	# Tras unos snapshots sin pérdida, la predicción del cliente vuelve a estar dentro del umbral.
+	for k: int in 6:
+		_step(sim, 2)
+		for p: PackedByteArray in tx.build(_capture(sim), 0):
+			var part := rx.receive(p)
+			if part != null:
+				cs.apply_part(part)
+		tx.on_ack(rx.latest_complete_tick, sim.tick)
+	var t := rx.latest_complete_tick
+	assert_int(t).is_equal(sim.tick)
+	assert_float(_max_prediction_error(rx.get_state(t), t, sim)).is_less_equal(DR_BOUND)
+	for s: int in cs.count:
+		var p := cs.predicted(s, t)
+		var ss := sim.store.slot_of(cs.ids[s])
+		assert_float(p.distance_to(Vector2(sim.store.pos_x[ss], sim.store.pos_z[ss]))).is_less_equal(DR_BOUND + 0.01)

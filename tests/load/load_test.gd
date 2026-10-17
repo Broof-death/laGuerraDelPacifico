@@ -10,6 +10,8 @@ extends Node
 ## ejército al lado opuesto del círculo (los ejércitos se cruzan en el centro, una batalla grande)
 ## y, en cada decisión, una orden MOVE a un subconjunto de 16 unidades (micro).
 ##
+## Los snapshots usan dead reckoning (enmienda de ADR-006): una vez por segundo se mide el error
+## entre lo que predice cada fantasma y la posición real (dr_error_cm).
 ## La simulación corre dentro de un MatchServer (T-005) con un cliente "fantasma" por jugador
 ## (MatchClient sin interpolación) conectado por LocalTransport con 2 % de pérdida en el canal
 ## unreliable (snapshots y acks). Cada fantasma decodifica sus snapshots y confirma con ack.
@@ -34,6 +36,10 @@ const BOT_DECISION_TICKS: int = SimConstants.TICK_RATE / 2  # 2 Hz
 const START_RADIUS: float = 200.0
 const MICRO_UNITS: int = 16
 const WARMUP_TICKS: int = 20
+## Las estadísticas por snapshot (bytes, antigüedad) empiezan a los 3 s: antes, cada fantasma
+## recibe el estado inicial completo (apariciones de ~13 B con el tope de 4 KB: ~1,1 s con 3000
+## entidades y ~1,6 s con 4500). Los KB/s por segundo sí incluyen esa sincronización.
+const NET_WARMUP_TICKS: int = 60
 
 var _sim: Simulation
 var _server: MatchServer
@@ -46,6 +52,12 @@ var _seq: int = 0
 var _commands_sent: int = 0
 var _commands_rejected: int = 0
 var _start_radius: float = START_RADIUS
+# Error de la predicción (dead reckoning) de los fantasmas, medido una vez por segundo.
+var _dr_err_cm := PackedInt64Array()
+var _dr_checked: int = 0
+var _dr_over: int = 0
+## Ticks (los primeros 40) en que alguna entidad en combate llevaba más de 300 ms desactualizada.
+var _late_ticks := PackedInt32Array()
 
 
 func _ready() -> void:
@@ -141,9 +153,11 @@ func _ready() -> void:
 				continue
 			sent_before[p] = conn.sender.snapshots_sent
 			cur_bytes[p] += conn.sender.last_bytes
-			if measured:
+			if t >= NET_WARMUP_TICKS:
 				snap_bytes.append(conn.sender.last_bytes)
 				snap_age.append(conn.sender.last_max_combat_age)
+				if conn.sender.last_max_combat_age > 6 and _late_ticks.size() < 40:
+					_late_ticks.append(t)
 				snap_deferred.append(conn.sender.last_deferred)
 				max_packet = maxi(max_packet, conn.sender.last_max_packet_bytes)
 				cap_cuts += conn.sender.last_cap_cuts
@@ -161,6 +175,8 @@ func _ready() -> void:
 			var with_target := _count_with_target()
 			battle_seconds.append(1 if with_target >= _sim.store.count * BATTLE_TARGET_FRACTION else 0)
 			max_targets = maxi(max_targets, with_target)
+			if measured:
+				_measure_dr_error()
 	var wall_s: float = (Time.get_ticks_usec() - wall_start) / 1_000_000.0
 	var net_result := _net_stats(players, snap_bytes, snap_age, snap_deferred, max_packet, cap_cuts,
 			second_bytes, battle_seconds, ghost_usec, loss)
@@ -315,6 +331,36 @@ func _count_with_target() -> int:
 	return n
 
 
+## Para cada fantasma: con su último estado completo (tick T), predice la posición de cada
+## entidad en el tick actual del servidor y la compara con la real. Registra el error máximo por
+## fantasma (en cm) y cuántas entidades están fuera del umbral (+ medio paso de cuantización). Lo
+## que pasó entre T y el tick actual (1-2 ticks) también cuenta, así que es una cota pesimista.
+func _measure_dr_error() -> void:
+	var now: int = _sim.tick
+	var limit: float = SnapshotCodec.DR_THRESHOLD_M + 0.0625 + 0.001
+	for g: MatchClient in _ghosts:
+		var t: int = g.receiver.latest_complete_tick
+		if t < 0:
+			continue
+		var st: SnapshotState = g.receiver.get_state(t)
+		var worst: float = 0.0
+		for i: int in st.size():
+			var s := _sim.store.slot_of(st.ids[i])
+			if s < 0:
+				continue
+			var w: int = st.words[i]
+			var v: int = st.vel[i]
+			var dt: int = now - st.ref[i]
+			var x := MapGrid.dequantize(SnapshotCodec.predict_q(SnapshotCodec.word_qx(w), SnapshotCodec.vel_x8(v), dt))
+			var z := MapGrid.dequantize(SnapshotCodec.predict_q(SnapshotCodec.word_qz(w), SnapshotCodec.vel_z8(v), dt))
+			var e := Vector2(x - _sim.store.pos_x[s], z - _sim.store.pos_z[s]).length()
+			worst = maxf(worst, e)
+			_dr_checked += 1
+			if e > limit:
+				_dr_over += 1
+		_dr_err_cm.append(int(worst * 100.0))
+
+
 func _submit(player_id: int, cmd: Command) -> void:
 	_commands_sent += 1
 	if _sim.submit_command(player_id, cmd) != Command.Reject.OK:
@@ -388,6 +434,11 @@ func _net_stats(players: int, snap_bytes: PackedInt64Array, snap_age: PackedInt6
 		"packets_lost": _net.dropped_packets,
 		"full_resets": full_resets,
 		"ghosts_consistent": consistent,
+		"dr_threshold_m": SnapshotCodec.DR_THRESHOLD_M,
+		"dr_error_cm": _stats_int(_dr_err_cm),
+		"dr_checked": _dr_checked,
+		"combat_age_over_300ms_ticks": _late_ticks,
+		"dr_over_threshold_fraction": snappedf(float(_dr_over) / maxi(_dr_checked, 1), 0.0001),
 	}
 
 

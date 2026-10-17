@@ -109,15 +109,21 @@ func _complete(tick: int, pend: _Pending, base: SnapshotState) -> void:
 	# Registros y bajas de todas las partes, en orden de id (las partes van en orden de id).
 	var rec_ids := PackedInt32Array()
 	var rec_words := PackedInt64Array()
+	var rec_vel := PackedInt32Array()
+	var rec_ref := PackedInt32Array()
 	var rec_prog := PackedByteArray()
 	var removed := PackedInt32Array()
 	for p: SnapshotCodec.Part in pend.parts:
 		rec_ids.append_array(p.rec_ids)
 		rec_words.append_array(p.rec_words)
+		rec_vel.append_array(p.rec_vel)
+		rec_ref.append_array(p.rec_ref)
 		rec_prog.append_array(p.rec_prog)
 		removed.append_array(p.removed_ids)
 	var bid := base.ids
 	var bw := base.words
+	var bv := base.vel
+	var br := base.ref
 	var bp := base.prog
 	var nb: int = bid.size()
 	var nr: int = rec_ids.size()
@@ -126,6 +132,8 @@ func _complete(tick: int, pend: _Pending, base: SnapshotState) -> void:
 	st.resize(nb + nr, false)
 	var sid := st.ids
 	var sw := st.words
+	var sv := st.vel
+	var sr := st.ref
 	var sp := st.prog
 	const BIG: int = 0x7FFFFFFF
 	var o: int = 0
@@ -138,6 +146,8 @@ func _complete(tick: int, pend: _Pending, base: SnapshotState) -> void:
 		if a <= b:
 			sid[o] = a
 			sw[o] = rec_words[r]
+			sv[o] = rec_vel[r]
+			sr[o] = rec_ref[r]
 			sp[o] = rec_prog[r]
 			o += 1
 			r += 1
@@ -149,6 +159,8 @@ func _complete(tick: int, pend: _Pending, base: SnapshotState) -> void:
 			if q >= nq or removed[q] != b:
 				sid[o] = b
 				sw[o] = bw[j]
+				sv[o] = bv[j]
+				sr[o] = br[j]
 				sp[o] = bp[j]
 				o += 1
 			j += 1

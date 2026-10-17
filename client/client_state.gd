@@ -1,18 +1,19 @@
 class_name ClientState
 extends RefCounted
 ## Estado de las entidades en el cliente, en arrays (SoA, ADR-006 punto 6): no hay un nodo ni un
-## objeto por entidad. Lo llena MatchClient con las partes de snapshot que llegan y lo interpola
-## con un retraso fijo; las vistas (T-017) leen render_x/render_z/render_heading por slot.
+## objeto por entidad. Lo llena MatchClient con las partes de snapshot que llegan; las vistas
+## (T-017) leen render_x/render_z/render_heading por slot después de interpolate().
 ##
-## Interpolación: cada slot guarda sus últimas SAMPLES muestras (tick del servidor, x, z, rumbo).
-## Con 200 ms de retraso y snapshots cada 100 ms hacen falta al menos 3 muestras para tener
-## siempre un par que rodee al instante de dibujo, así que se guardan 4 (ADR-006 decía "los dos
-## últimos estados"; con dos el retraso no se podría cubrir).
-## Si el instante de dibujo pasa la última muestra (entidad aplazada por el tope de 4 KB), se
-## extrapola con la última velocidad hasta EXTRAPOLATE_TICKS (300 ms) y después queda quieta.
+## Dead reckoning (enmienda de ADR-006, T-005): de cada entidad se guardan las dos últimas
+## trayectorias recibidas (posición en el tick ref, velocidad y rumbo). El dibujo va con un retraso
+## fijo (MatchClient: 200 ms); en el instante de dibujo t se usa la trayectoria más nueva cuyo ref
+## sea <= t (o la anterior si todavía no se llegó a la nueva) y se extrapola: p = p_ref + v·(t-ref).
+## Al cambiar de trayectoria (porque llegó una nueva o porque el instante de dibujo la alcanzó), la
+## diferencia de posición se guarda como una corrección que se desvanece en ~CORRECTION_TIME, para
+## que la unidad no salte. Si la corrección supera SNAP_DISTANCE se descarta (teletransporte).
 
-const SAMPLES: int = 4
-const EXTRAPOLATE_TICKS: float = 6.0
+const CORRECTION_TIME: float = 0.15
+const SNAP_DISTANCE: float = 20.0
 
 var count: int = 0
 var ids := PackedInt32Array()
@@ -27,13 +28,20 @@ var render_x := PackedFloat64Array()
 var render_z := PackedFloat64Array()
 var render_heading := PackedFloat32Array()
 
-# Muestras: slot * SAMPLES + k, en anillo; _smp_head[slot] es la próxima posición a escribir.
-var _smp_tick := PackedInt32Array()
-var _smp_x := PackedFloat64Array()
-var _smp_z := PackedFloat64Array()
-var _smp_h := PackedFloat32Array()
-var _smp_n := PackedInt32Array()
-var _smp_head := PackedInt32Array()
+# Trayectorias: slot * 2 + 0 = la anterior, slot * 2 + 1 = la más nueva.
+var _tr_t := PackedInt32Array()
+var _tr_x := PackedFloat64Array()
+var _tr_z := PackedFloat64Array()
+var _tr_vx := PackedFloat32Array()
+var _tr_vz := PackedFloat32Array()
+var _tr_h := PackedFloat32Array()
+## Trayectorias válidas por slot (1 o 2).
+var _tr_n := PackedInt32Array()
+## ref de la trayectoria que se usó en el último dibujo.
+var _sel := PackedInt32Array()
+var _corr_x := PackedFloat64Array()
+var _corr_z := PackedFloat64Array()
+var _last_render_tick: float = -1.0
 ## id -> slot (-1 = no está).
 var _id_to_slot := PackedInt32Array()
 
@@ -48,21 +56,52 @@ func slot_of(id: int) -> int:
 func apply_part(p: SnapshotCodec.Part) -> void:
 	for id: int in p.removed_ids:
 		remove(id)
-	var tick: int = p.tick
+	const VS: float = SnapshotCodec.VEL_STEP
 	for i: int in p.rec_ids.size():
 		var id: int = p.rec_ids[i]
 		var s: int = slot_of(id)
+		var w: int = p.rec_words[i]
+		var v: int = p.rec_vel[i]
+		var ref: int = p.rec_ref[i]
+		var x: float = MapGrid.dequantize(w & SnapshotCodec.Q_MASK)
+		var z: float = MapGrid.dequantize((w >> SnapshotCodec.QZ_SHIFT) & SnapshotCodec.Q_MASK)
+		var vx: float = SnapshotCodec.vel_x8(v) * VS
+		var vz: float = SnapshotCodec.vel_z8(v) * VS
+		var h: float = SnapshotCodec.dequantize_heading(SnapshotCodec.word_heading8(w))
 		if s < 0:
 			if p.rec_def[i] < 0:
 				continue  # entidad sin datos de aparición (no debería pasar)
 			s = _add(id, p.rec_def[i], p.rec_owner[i])
-		var w: int = p.rec_words[i]
+			_set_traj(s * 2 + 1, ref, x, z, vx, vz, h)
+			_tr_n[s] = 1
+			_sel[s] = ref
+			_corr_x[s] = 0.0
+			_corr_z[s] = 0.0
+			render_x[s] = x
+			render_z[s] = z
+			render_heading[s] = h
+		else:
+			var b: int = s * 2 + 1
+			var tb: int = _tr_t[b]
+			if ref > tb:
+				# Nueva trayectoria: la diferencia en el último instante dibujado pasa a corrección.
+				var have_render: bool = _last_render_tick >= 0.0
+				var before := _pos_at(s, _last_render_tick, true) if have_render else Vector2.ZERO
+				_set_traj(b - 1, tb, _tr_x[b], _tr_z[b], _tr_vx[b], _tr_vz[b], _tr_h[b])
+				_set_traj(b, ref, x, z, vx, vz, h)
+				_tr_n[s] = 2
+				if have_render:
+					var c := before - _pos_at(s, _last_render_tick, false)
+					if c.length() > SNAP_DISTANCE:
+						c = Vector2.ZERO
+					_corr_x[s] = c.x
+					_corr_z[s] = c.y
+					_sel[s] = _tr_t[_pick(s, _last_render_tick)]
+			elif ref == tb:
+				_tr_h[b] = h  # cambio de rumbo sin reanclar la posición
 		action[s] = SnapshotCodec.word_action(w)
 		hp_ratio[s] = SnapshotCodec.dequantize_hp(SnapshotCodec.word_hp8(w))
 		progress[s] = p.rec_prog[i] / 255.0
-		_push_sample(s, tick, MapGrid.dequantize(SnapshotCodec.word_qx(w)),
-				MapGrid.dequantize(SnapshotCodec.word_qz(w)),
-				SnapshotCodec.dequantize_heading(SnapshotCodec.word_heading8(w)))
 
 
 func remove(id: int) -> void:
@@ -80,67 +119,99 @@ func remove(id: int) -> void:
 		render_x[s] = render_x[last]
 		render_z[s] = render_z[last]
 		render_heading[s] = render_heading[last]
-		for k: int in SAMPLES:
-			_smp_tick[s * SAMPLES + k] = _smp_tick[last * SAMPLES + k]
-			_smp_x[s * SAMPLES + k] = _smp_x[last * SAMPLES + k]
-			_smp_z[s * SAMPLES + k] = _smp_z[last * SAMPLES + k]
-			_smp_h[s * SAMPLES + k] = _smp_h[last * SAMPLES + k]
-		_smp_n[s] = _smp_n[last]
-		_smp_head[s] = _smp_head[last]
+		for k: int in 2:
+			var o: int = last * 2 + k
+			_set_traj(s * 2 + k, _tr_t[o], _tr_x[o], _tr_z[o], _tr_vx[o], _tr_vz[o], _tr_h[o])
+		_tr_n[s] = _tr_n[last]
+		_sel[s] = _sel[last]
+		_corr_x[s] = _corr_x[last]
+		_corr_z[s] = _corr_z[last]
 		_id_to_slot[ids[s]] = s
 	_id_to_slot[id] = -1
 	count = last
 
 
-## Última muestra recibida de un slot: Vector3(x, z, tick).
+## Ancla de la trayectoria más nueva: Vector3(x, z, tick ref).
 func latest_sample(s: int) -> Vector3:
-	var k: int = (_smp_head[s] + SAMPLES - 1) % SAMPLES
-	var i: int = s * SAMPLES + k
-	return Vector3(_smp_x[i], _smp_z[i], _smp_tick[i])
+	var b: int = s * 2 + 1
+	return Vector3(_tr_x[b], _tr_z[b], _tr_t[b])
+
+
+## Posición que predice el dead reckoning en `tick` (sin la corrección visual).
+func predicted(s: int, tick: float) -> Vector2:
+	return _pos_at(s, tick, false)
 
 
 ## Calcula render_x/z/heading para el instante `render_tick` (en ticks del servidor, con
 ## decimales).
 func interpolate(render_tick: float) -> void:
-	var st := _smp_tick
-	var sx := _smp_x
-	var sz := _smp_z
-	var sh := _smp_h
+	var dtr: float = render_tick - _last_render_tick if _last_render_tick >= 0.0 else 0.0
+	_last_render_tick = render_tick
+	const DT: float = SimConstants.TICK_DT
+	var decay: float = exp(-maxf(dtr, 0.0) * DT / CORRECTION_TIME)
+	var tt := _tr_t
+	var tx := _tr_x
+	var tz := _tr_z
+	var tvx := _tr_vx
+	var tvz := _tr_vz
+	var th := _tr_h
+	var tn := _tr_n
+	var sel := _sel
+	var cx := _corr_x
+	var cz := _corr_z
 	var rx := render_x
 	var rz := render_z
 	var rh := render_heading
+	const SNAP2: float = SNAP_DISTANCE * SNAP_DISTANCE
 	for s: int in count:
-		var n: int = _smp_n[s]
-		var head: int = _smp_head[s]
-		var base: int = s * SAMPLES
-		var newest: int = base + (head + SAMPLES - 1) % SAMPLES
-		if n == 1 or render_tick <= st[base + (head + SAMPLES - n) % SAMPLES]:
-			# Una sola muestra, o el instante es anterior a todas: la más vieja disponible.
-			var oldest: int = base + (head + SAMPLES - n) % SAMPLES
-			rx[s] = sx[oldest]
-			rz[s] = sz[oldest]
-			rh[s] = sh[oldest]
-			continue
-		if render_tick >= st[newest]:
-			# Extrapolación con la última velocidad, como mucho EXTRAPOLATE_TICKS.
-			var prev: int = base + (head + SAMPLES - 2) % SAMPLES
-			var span: float = st[newest] - st[prev]
-			var ahead: float = minf(render_tick - st[newest], EXTRAPOLATE_TICKS)
-			var f: float = ahead / span if span > 0.0 else 0.0
-			rx[s] = sx[newest] + (sx[newest] - sx[prev]) * f
-			rz[s] = sz[newest] + (sz[newest] - sz[prev]) * f
-			rh[s] = sh[newest]
-			continue
-		# Buscar el par (a, b) con t_a <= render_tick < t_b, de la más nueva hacia atrás.
-		for k: int in range(1, n):
-			var a: int = base + (head + SAMPLES - 1 - k) % SAMPLES
-			if st[a] <= render_tick:
-				var b: int = base + (head + SAMPLES - k) % SAMPLES
-				var t: float = (render_tick - st[a]) / float(st[b] - st[a])
-				rx[s] = lerpf(sx[a], sx[b], t)
-				rz[s] = lerpf(sz[a], sz[b], t)
-				rh[s] = lerp_angle(sh[a], sh[b], t)
-				break
+		var b: int = s * 2 + 1
+		var use: int = b
+		if tn[s] == 2 and render_tick < tt[b]:
+			use = b - 1
+		if tt[use] != sel[s]:
+			# El instante de dibujo alcanzó la trayectoria nueva: suavizar el cambio.
+			var other: int = b - 1 if use == b else b
+			if tt[other] == sel[s]:
+				var dto: float = maxf(render_tick - tt[other], 0.0) * DT
+				var dtu: float = maxf(render_tick - tt[use], 0.0) * DT
+				var ox: float = tx[other] + tvx[other] * dto - tx[use] - tvx[use] * dtu
+				var oz: float = tz[other] + tvz[other] * dto - tz[use] - tvz[use] * dtu
+				if ox * ox + oz * oz <= SNAP2:
+					cx[s] += ox
+					cz[s] += oz
+			sel[s] = tt[use]
+		var dt: float = maxf(render_tick - tt[use], 0.0) * DT
+		cx[s] *= decay
+		cz[s] *= decay
+		rx[s] = tx[use] + tvx[use] * dt + cx[s]
+		rz[s] = tz[use] + tvz[use] * dt + cz[s]
+		rh[s] = th[use]
+
+
+## Índice de la trayectoria que corresponde al instante t.
+func _pick(s: int, t: float) -> int:
+	var b: int = s * 2 + 1
+	if _tr_n[s] == 2 and t < _tr_t[b]:
+		return b - 1
+	return b
+
+
+func _pos_at(s: int, t: float, with_corr: bool) -> Vector2:
+	var u: int = _pick(s, t)
+	var dt: float = maxf(t - _tr_t[u], 0.0) * SimConstants.TICK_DT
+	var out := Vector2(_tr_x[u] + _tr_vx[u] * dt, _tr_z[u] + _tr_vz[u] * dt)
+	if with_corr:
+		out += Vector2(_corr_x[s], _corr_z[s])
+	return out
+
+
+func _set_traj(i: int, t: int, x: float, z: float, vx: float, vz: float, h: float) -> void:
+	_tr_t[i] = t
+	_tr_x[i] = x
+	_tr_z[i] = z
+	_tr_vx[i] = vx
+	_tr_vz[i] = vz
+	_tr_h[i] = h
 
 
 func _add(id: int, p_def: int, p_owner: int) -> int:
@@ -157,12 +228,16 @@ func _add(id: int, p_def: int, p_owner: int) -> int:
 		render_x.resize(cap)
 		render_z.resize(cap)
 		render_heading.resize(cap)
-		_smp_tick.resize(cap * SAMPLES)
-		_smp_x.resize(cap * SAMPLES)
-		_smp_z.resize(cap * SAMPLES)
-		_smp_h.resize(cap * SAMPLES)
-		_smp_n.resize(cap)
-		_smp_head.resize(cap)
+		_tr_t.resize(cap * 2)
+		_tr_x.resize(cap * 2)
+		_tr_z.resize(cap * 2)
+		_tr_vx.resize(cap * 2)
+		_tr_vz.resize(cap * 2)
+		_tr_h.resize(cap * 2)
+		_tr_n.resize(cap)
+		_sel.resize(cap)
+		_corr_x.resize(cap)
+		_corr_z.resize(cap)
 	if id >= _id_to_slot.size():
 		var old: int = _id_to_slot.size()
 		_id_to_slot.resize(maxi(id + 1, old * 2))
@@ -171,37 +246,5 @@ func _add(id: int, p_def: int, p_owner: int) -> int:
 	ids[s] = id
 	def_index[s] = p_def
 	owner[s] = p_owner
-	_smp_n[s] = 0
-	_smp_head[s] = 0
 	_id_to_slot[id] = s
 	return s
-
-
-func _push_sample(s: int, tick: int, x: float, z: float, h: float) -> void:
-	var n: int = _smp_n[s]
-	if n > 0:
-		var li: int = s * SAMPLES + (_smp_head[s] + SAMPLES - 1) % SAMPLES
-		var last_tick: int = _smp_tick[li]
-		if tick <= last_tick:
-			return
-		# Si la entidad no se actualizaba desde hace más de un intervalo, estaba quieta hasta el
-		# snapshot anterior: se agrega esa muestra para no deslizarla desde el pasado.
-		var gap_tick: int = tick - SimConstants.SNAPSHOT_EVERY_TICKS
-		if last_tick < gap_tick:
-			_write_sample(s, gap_tick, _smp_x[li], _smp_z[li], _smp_h[li])
-	else:
-		render_x[s] = x
-		render_z[s] = z
-		render_heading[s] = h
-	_write_sample(s, tick, x, z, h)
-
-
-func _write_sample(s: int, tick: int, x: float, z: float, h: float) -> void:
-	var head: int = _smp_head[s]
-	var i: int = s * SAMPLES + head
-	_smp_tick[i] = tick
-	_smp_x[i] = x
-	_smp_z[i] = z
-	_smp_h[i] = h
-	_smp_head[s] = (head + 1) % SAMPLES
-	_smp_n[s] = mini(_smp_n[s] + 1, SAMPLES)

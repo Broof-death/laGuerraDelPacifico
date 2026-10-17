@@ -19,6 +19,8 @@ var tick: int = -1
 var count: int = 0
 var ids := PackedInt32Array()
 var words := PackedInt64Array()
+## Velocidad cuantizada (SnapshotCodec.pack_vel).
+var vel := PackedInt32Array()
 var prog := PackedByteArray()
 var def_index := PackedInt32Array()
 var owner := PackedInt32Array()
@@ -38,6 +40,7 @@ func capture(sim: Simulation) -> void:
 	count = n
 	ids.resize(n)
 	words.resize(n)
+	vel.resize(n)
 	prog.resize(n)
 	def_index.resize(n)
 	owner.resize(n)
@@ -55,6 +58,10 @@ func capture(sim: Simulation) -> void:
 	var px := st.pos_x
 	var pz := st.pos_z
 	var hd := st.heading
+	var vxs := st.vel_x
+	var vzs := st.vel_z
+	const VINV: float = 1.0 / SnapshotCodec.VEL_STEP
+	const VL: int = SnapshotCodec.VEL_LIMIT
 	var hp := st.hp
 	var act := st.action
 	var prg := st.progress
@@ -83,6 +90,9 @@ func capture(sim: Simulation) -> void:
 		var a: int = act[s]
 		ids[i] = sid[s]
 		words[i] = qx | (qz << 20) | (h8 << 40) | (hp8 << 48) | (a << 56)
+		var vx8: int = clampi(int(roundf(vxs[s] * VINV)), -VL, VL)
+		var vz8: int = clampi(int(roundf(vzs[s] * VINV)), -VL, VL)
+		vel[i] = (vx8 & 0xFF) | ((vz8 & 0xFF) << 8)
 		prog[i] = SnapshotCodec.quantize_progress(prg[s]) if SnapshotCodec.action_uses_progress(a) else 0
 		def_index[i] = d
 		owner[i] = own[s]

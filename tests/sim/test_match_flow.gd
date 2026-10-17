@@ -93,7 +93,7 @@ func test_client_moves_own_units_but_not_others() -> void:
 	var s_mine := _server.sim.store.slot_of(mine[0])
 	var cb := b.state.slot_of(mine[0])
 	assert_int(cb).is_greater_equal(0)
-	var seen := b.state.latest_sample(cb)
+	var seen := b.state.predicted(cb, b.receiver.latest_tick)
 	assert_float(absf(seen.x - _server.sim.store.pos_x[s_mine])).is_less(3.0)
 	assert_int(a.last_confirmed_seq()).is_equal(seq_bad)
 
@@ -197,7 +197,7 @@ func test_latency_and_loss_converge_and_interpolate() -> void:
 	assert_float(absf(b.state.render_x[cb] - _server.sim.store.pos_x[s])).is_less_equal(0.19)
 
 
-func test_client_state_interpolates_between_samples() -> void:
+func test_client_state_dead_reckoning_and_smooth_correction() -> void:
 	var cs := ClientState.new()
 	var p := SnapshotCodec.Part.new()
 	p.rec_ids = PackedInt32Array([7])
@@ -205,16 +205,29 @@ func test_client_state_interpolates_between_samples() -> void:
 	p.rec_def = PackedInt32Array([0])
 	p.rec_owner = PackedInt32Array([1])
 	p.rec_prog = PackedByteArray([0])
-	for k: int in 3:
-		p.tick = 10 + k * 2
-		p.rec_words = PackedInt64Array([SnapshotCodec.pack_word(MapGrid.quantize(k * 10.0), MapGrid.quantize(0.0), 0, 255, 1)])
-		cs.apply_part(p)
-	cs.interpolate(13.0)  # entre la muestra de 12 (10 m) y la de 14 (20 m)
-	assert_float(cs.render_x[0]).is_equal_approx(15.0, 0.07)
-	cs.interpolate(16.0)  # 2 ticks después de la última: extrapola con 5 m/tick
-	assert_float(cs.render_x[0]).is_equal_approx(30.0, 0.07)
-	cs.interpolate(100.0)  # extrapolación acotada a 6 ticks (300 ms)
-	assert_float(cs.render_x[0]).is_equal_approx(50.0, 0.07)
+	var v5 := SnapshotCodec.pack_vel(SnapshotCodec.quantize_vel(5.0), 0)
+	# Trayectoria A: x = 0 en el tick 10, 5 m/s hacia +x.
+	p.tick = 10
+	p.rec_ref = PackedInt32Array([10])
+	p.rec_vel = PackedInt32Array([v5])
+	p.rec_words = PackedInt64Array([SnapshotCodec.pack_word(MapGrid.quantize(0.0), MapGrid.quantize(0.0), 0, 255, 1)])
+	cs.apply_part(p)
+	cs.interpolate(12.0)  # extrapola: 2 ticks = 0,1 s = 0,5 m
+	assert_float(cs.render_x[0]).is_equal_approx(0.5, 0.07)
+	# Trayectoria B: reanclada en el tick 14 en x = 1,5 (A predecía 1,0: error de 0,5 m).
+	p.tick = 14
+	p.rec_appear = PackedByteArray([0])
+	p.rec_ref = PackedInt32Array([14])
+	p.rec_words = PackedInt64Array([SnapshotCodec.pack_word(MapGrid.quantize(1.5), MapGrid.quantize(0.0), 0, 255, 1)])
+	cs.apply_part(p)
+	cs.interpolate(13.0)  # todavía en A
+	assert_float(cs.render_x[0]).is_equal_approx(0.75, 0.07)
+	cs.interpolate(14.0)  # pasa a B sin saltar: queda entre A (1,0) y B (1,5)
+	assert_float(cs.render_x[0]).is_greater(1.0)
+	assert_float(cs.render_x[0]).is_less(1.45)
+	cs.interpolate(60.0)  # la corrección se desvaneció: 1,5 + 5 m/s * 2,3 s
+	assert_float(cs.render_x[0]).is_equal_approx(13.0, 0.08)
+	assert_float(cs.predicted(0, 60.0).x).is_equal_approx(13.0, 0.08)
 	cs.remove(7)
 	assert_int(cs.count).is_equal(0)
 
