@@ -4,12 +4,18 @@ extends Node
 ##   HOST       MatchServer con ENetTransport (remotos) y LocalTransport (su propio cliente)
 ##   JOIN       MatchClient con ENetTransport
 ##   DEDICATED  MatchServer con ENetTransport, sin cliente (--server)
-## Todavía no dibuja unidades (las vistas son de T-017): muestra un texto de estado.
+## Con ventana y cliente (T-017) arma también lo visible: el escenario provisional
+## (client/world/battlefield.tscn, con la cámara RTS), el UnitBatchRenderer sobre el ClientState y
+## las órdenes de prueba (TestOrders). En el modo de un jugador agrega los extras de prueba y el
+## bot mínimo de TestSkirmish. Sin ventana (headless) solo muestra un texto de estado.
+## Argumentos extra para capturas: --zoom=0..1, --yaw=grados, --focus=x,z.
 
 var config: MatchConfig
 var server: MatchServer
 var client: MatchClient
 var _elapsed: float = 0.0
+var renderer: UnitBatchRenderer
+var skirmish: TestSkirmish
 var _status: Label
 var _status_timer: float = 0.0
 
@@ -27,9 +33,12 @@ func _ready() -> void:
 	if config.has_client():
 		_start_client(data)
 	if DisplayServer.get_name() != "headless":
-		_status = Label.new()
-		_status.position = Vector2(16, 16)
-		add_child(_status)
+		if client != null:
+			_start_views(data)
+		else:
+			_status = Label.new()
+			_status.position = Vector2(16, 16)
+			add_child(_status)
 	print("Partida: modo %s" % MatchConfig.Mode.keys()[config.mode])
 
 
@@ -39,6 +48,9 @@ func _start_server(data: GameData) -> void:
 	server.max_players = config.max_players
 	server.allow_time_scale = config.mode == MatchConfig.Mode.SINGLE
 	server.spawn_test_armies(config.players, config.units_per_player)
+	if config.mode == MatchConfig.Mode.SINGLE:
+		skirmish = TestSkirmish.new(server, config.match_seed)
+		skirmish.spawn_extras(config.players)
 	server.player_joined.connect(func(pid: int) -> void: print("Servidor: entra el jugador %d" % pid))
 	server.player_left.connect(func(pid: int) -> void: print("Servidor: sale el jugador %d" % pid))
 	if config.mode == MatchConfig.Mode.HOST or config.mode == MatchConfig.Mode.DEDICATED:
@@ -75,9 +87,42 @@ func _start_client(data: GameData) -> void:
 		print("Comando %d rechazado: %s" % [seq, Command.Reject.keys()[reason]]))
 
 
+## Escenario, cámara, vistas y órdenes de prueba (solo cliente con ventana).
+func _start_views(data: GameData) -> void:
+	var world: Node3D = load("res://client/world/battlefield.tscn").instantiate()
+	add_child(world)
+	var cam := world.get_node("RtsCamera") as RtsCamera
+	_apply_camera_args(cam)
+	renderer = UnitBatchRenderer.new()
+	renderer.name = "Unidades"
+	add_child(renderer)
+	renderer.setup(client.state, ViewCatalog.new(data))
+	var orders := TestOrders.new()
+	orders.setup(client, data, renderer)
+	add_child(orders)
+
+
+func _apply_camera_args(cam: RtsCamera) -> void:
+	for arg: String in OS.get_cmdline_user_args():
+		var parts := arg.trim_prefix("--").split("=", true, 1)
+		if parts.size() != 2:
+			continue
+		match parts[0]:
+			"zoom":
+				cam.set_zoom(float(parts[1]), true)
+			"yaw":
+				cam.set_yaw(deg_to_rad(float(parts[1])), true)
+			"focus":
+				var xz := parts[1].split_floats(",")
+				if xz.size() == 2:
+					cam.focus_on(Vector3(xz[0], 0.0, xz[1]), true)
+
+
 func _process(delta: float) -> void:
 	if server != null:
 		server.update(delta)
+	if skirmish != null:
+		skirmish.update(delta, config.players)
 	if client != null:
 		client.update(delta)
 	_elapsed += delta

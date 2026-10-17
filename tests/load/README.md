@@ -96,3 +96,43 @@ sincronización inicial); los KB/s por segundo cuentan todo.
   aparición), así que 1 s no es alcanzable sin subir el tope o achicar la aparición.
 - Armado de snapshots: con dead reckoning la mezcla sigue recorriendo los 3000 visibles por cliente,
   pero se escriben muchos menos registros: ~8 ms por tick en S2 (antes ~11).
+
+# Prueba de carga del render del cliente (T-017, ADR-006 punto 7, ADR-010 punto 5)
+
+Necesita ventana (no `--headless`). Apaga la sincronización vertical y abre la ventana a 1920x1080.
+
+```bash
+godot --path . res://tests/load/render_load.tscn -- --units=2000
+godot --path . res://tests/load/render_load.tscn -- --units=3000 --seconds=10
+godot --path . res://tests/load/render_load.tscn -- --units=4000
+# Partida local real (MatchServer + MatchClient + bots) en el mismo proceso:
+godot --path . res://tests/load/render_load.tscn -- --units=2000 --mode=full --seconds=15
+# Otros: --zoom=0.5 (zoom de la cámara RTS), --window=1920x1080
+```
+
+- `synthetic` (por defecto): un `SyntheticClientState` con las entidades de 6 jugadores (infantería,
+  caballería, artillería, 1 edificio y 2 buques por jugador) en 18 regimientos que avanzan y
+  retroceden. Mide solo el cliente: `UnitBatchRenderer` (recorte, LOD, pool de 256 vistas y
+  MultiMesh) sobre el escenario provisional `client/world/battlefield.tscn`.
+- `full`: la simulación y la red local de verdad; el cliente es el jugador 1 y ve lo que su visión
+  permite.
+- La cámara queda a zoom medio (0,5: 150 m del foco) sobre el centro y gira 8°/s. Se descartan los
+  primeros 2 s.
+- Salida: una línea `RENDER_RESULT {...}` y un JSON en `user://load/render_<unidades>_<modo>.json`:
+  FPS medio, frame p50/p95/p99/máx, draw calls, primitivas, objetos, VRAM, tiempo del renderizador
+  por lotes y del servidor (en `full`), visibles de media y reparto por nivel de detalle.
+- Umbrales: <= 2000 unidades, >= 60 FPS de media y p99 <= 22 ms; <= 3000, >= 45 FPS; más de 3000
+  sin umbral. Código de salida 0 si cumple.
+
+## Resultados (17-10-2026, PC de Luis: Ryzen 9 7900X3D, RTX 3090, 1920x1080, Godot 4.7.2 GL Compatibility, build de depuración del editor)
+
+| Unidades | Modo | Visibles (media) | FPS medio | Frame p50 / p99 / máx (ms) | Draw calls | Primitivas | Renderizador (ms, media / p99) |
+|---|---|---|---|---|---|---|---|
+| 2000 | synthetic | 1764 | 241 | 4,0 / 6,2 / 14,5 | 857 | 0,55 M | 2,1 / 3,0 |
+| 3000 | synthetic | 2617 | 183 | 5,3 / 7,8 / 14,1 | 857 | 0,89 M | 3,0 / 4,1 |
+| 4000 | synthetic | 3443 | 149 | 6,6 / 9,0 / 14,4 | 853 | 1,21 M | 3,9 / 5,0 |
+| 2000 | full | 1456 | 279 | 3,3 / 7,5 / 37,5 | 585 | 0,32 M | 1,8 / 2,5 (servidor 0,6) |
+
+Las 256 vistas individuales (cuerpo y sombra) son la mayor parte de las draw calls; los lotes son
+22 MultiMesh. VRAM ~25 MB. En una corrida anterior con 4000 hubo un tirón aislado de 533 ms
+(probablemente la compilación de un shader al aparecer un lote nuevo); no se repitió.

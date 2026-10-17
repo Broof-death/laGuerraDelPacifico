@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="UnitDef" format=3]
+
+[ext_resource type="Script" path="res://core/defs/unit_def.gd" id="1_unit"]
+
+[resource]
+script = ExtResource("1_unit")
+id = &"caballeria_prueba"
+display_name = "Caballería de prueba"
+description = "Unidad de prueba para las vistas provisionales (T-017). No es contenido histórico."
+max_hp = 120
+vision_range = 250.0
+placeholder_size = Vector3(1, 2.2, 2.6)
+placeholder_label = "CAB"
+category = 2
+speed = 8.0
+radius = 1.4

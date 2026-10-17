@@ -8,9 +8,14 @@
 [ext_resource type="Script" path="res://core/defs/game_data.gd" id="6_1diyi"]
 [ext_resource type="Script" path="res://core/defs/unit_def.gd" id="7_cog1c"]
 [ext_resource type="Resource" path="res://data/units/comun/infanteria_prueba.tres" id="8_d15be"]
+[ext_resource type="Resource" path="res://data/units/comun/caballeria_prueba.tres" id="9_cab"]
+[ext_resource type="Resource" path="res://data/units/comun/artilleria_prueba.tres" id="10_art"]
+[ext_resource type="Resource" path="res://data/units/comun/buque_prueba.tres" id="11_buq"]
+[ext_resource type="Resource" path="res://data/buildings/comun/edificio_prueba.tres" id="12_edif"]
 
 [resource]
 script = ExtResource("6_1diyi")
 factions = Array[ExtResource("2_pftn3")]([ExtResource("3_7lvw4")])
-units = Array[ExtResource("7_cog1c")]([ExtResource("8_d15be")])
+units = Array[ExtResource("7_cog1c")]([ExtResource("8_d15be"), ExtResource("9_cab"), ExtResource("10_art"), ExtResource("11_buq")])
+buildings = Array[ExtResource("1_lhs1r")]([ExtResource("12_edif")])
 resources = Array[ExtResource("4_2ewf2")]([ExtResource("5_vy2p8")])

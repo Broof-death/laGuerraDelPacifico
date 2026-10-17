@@ -4,7 +4,11 @@
   LocalTransport) y de ENet en 127.0.0.1 (gdUnit4 v6.2.2, en `addons/gdUnit4/`).
 - `tests/core/`: pruebas unitarias del código compartido: BitWriter/BitReader, códec de comandos y
   códec de snapshots (ida y vuelta, delta contra ack, acks y paquetes perdidos, tope de 4 KB).
-- `tests/load/`: prueba de carga headless de ADR-006 (no usa gdUnit4). Ver `tests/load/README.md`.
+- `tests/client/`: pruebas unitarias de las vistas del cliente sin GPU (T-017): mallas provisionales,
+  colores de bando, catálogo visual (def -> malla o escena), niveles de detalle, pool de vistas y
+  reparto entre vistas y lotes.
+- `tests/load/`: prueba de carga headless de ADR-006 (no usa gdUnit4) y prueba de render del cliente
+  (`render_load.tscn`, con ventana). Ver `tests/load/README.md`.
 - `tests/net/`: comprobación de red con dos procesos de Godot (ver abajo).
 
 ## Primera vez (o tras clonar)
@@ -23,7 +27,7 @@ no usan entrada ni UI, así que no hay problema).
 Windows (cmd; con `GODOT_BIN` apuntando al ejecutable de Godot 4.7):
 
 ```bat
-addons\gdUnit4\runtest.cmd --headless --ignoreHeadlessMode -a res://tests/sim -a res://tests/core
+addons\gdUnit4\runtest.cmd --headless --ignoreHeadlessMode -a res://tests/sim -a res://tests/core -a res://tests/client
 ```
 
 Si la ruta de Godot tiene paréntesis (p. ej. `Program Files (x86)`), `runtest.cmd` falla al
@@ -31,7 +35,7 @@ parsearla; en ese caso se llama directamente lo mismo que hace el script (Git Ba
 
 ```bash
 "$GODOT" --path . -s -d --remote-debug tcp://127.0.0.1:0 res://addons/gdUnit4/bin/GdUnitCmdTool.gd \
-    --headless --ignoreHeadlessMode -a res://tests/sim -a res://tests/core
+    --headless --ignoreHeadlessMode -a res://tests/sim -a res://tests/core -a res://tests/client
 ```
 
 Código de salida: 0 = todo pasa, 100 = fallos. Los reportes (JUnit `results.xml` y HTML) quedan
@@ -58,4 +62,4 @@ Con el anfitrión (o un servidor dedicado) en un proceso y el cliente de comprob
 El proceso 2 imprime `CHECK OK: ...` y sale con 0 si: recibió WELCOME y snapshots, sus unidades
 avanzaron al menos 10 m y el comando sobre una unidad ajena volvió como `COMMAND_REJECTED`
 (`NOT_OWNER`) sin que esa unidad se moviera. Sin `--headless`, `main/match.tscn` muestra un texto
-de estado (todavía no dibuja unidades: eso es T-017).
+de estado; con un cliente dibuja las unidades (T-017).
