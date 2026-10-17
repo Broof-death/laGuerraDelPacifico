@@ -42,7 +42,7 @@ export async function sembrar({ conEjemplos = true } = {}) {
   await desconectar();
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await sembrar();
   console.log(`Emulador listo. Usuarios: ${USUARIOS_PRUEBA.map((u) => u.email).join(", ")} (clave: ${CLAVE_PRUEBA})`);
   process.exit(0);
