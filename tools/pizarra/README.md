@@ -8,34 +8,115 @@ Tablero compartido del proyecto: tareas, bloqueos que deben resolver personas, d
 
 Todo funciona con el plan **gratuito (Spark)** de Firebase: Firestore, Authentication y Hosting. No usa Cloud Functions.
 
-## Configuración inicial (una sola vez, la hace una persona)
+**Pizarra en línea:** https://la-guerra-del-pacifico.web.app
 
-1. En la [consola de Firebase](https://console.firebase.google.com), crea un proyecto o usa uno existente. Revisa que esté en el plan **Spark**.
-2. **Authentication → Método de acceso:** habilita **Correo electrónico/contraseña**.
-3. **Authentication → Usuarios:** crea un usuario para cada persona con una contraseña temporal. Cada uno puede cambiarla con «Olvidé mi contraseña» en la pizarra.
-4. **Authentication → Configuración → Acciones del usuario:** desmarca **Habilitar creación (registro)**, para que nadie más pueda crear cuentas.
-5. **Firestore Database → Crear base de datos** en modo producción. Para Chile y Perú conviene la región `southamerica-east1`.
-6. **Configuración del proyecto → Tus apps → Agregar app web.** Copia el objeto `firebaseConfig` en `web/config.js`. Esa configuración no es secreta: la seguridad la dan las reglas de Firestore.
-7. En `firestore.rules`, reemplaza `companero@ejemplo.com` por el correo real de tu compañero.
-8. Publica las reglas y la interfaz:
+## Entrar a la pizarra (web)
+
+1. Pide al administrador que te dé acceso (ver [Sumar a una persona](#sumar-a-una-persona)).
+2. Entra a https://la-guerra-del-pacifico.web.app con tu correo y la contraseña temporal que te dieron.
+3. Para crear tu propia contraseña: en la pantalla de entrada escribe tu correo y presiona **«Olvidé mi contraseña»**. Te llega un enlace por correo (revisa spam).
+
+## Conectar tu Claude Code a la pizarra (MCP)
+
+Hazlo una vez en cada computador. Así tu Claude puede leer y actualizar la pizarra, y cada chat nuevo empieza con el resumen del proyecto.
+
+### Requisitos
+
+- [Node.js](https://nodejs.org) **20 o superior**. Compruébalo con `node -v`.
+- [Claude Code](https://claude.com/claude-code) instalado.
+- Tener acceso a la pizarra web y **conocer tu contraseña**: tu Claude entra con la misma cuenta.
+
+### Pasos
+
+1. **Clona el repositorio y cámbiate a `develop`:**
+
+   ```bash
+   git clone https://github.com/Broof-death/laGuerraDelPacifico.git
+   cd laGuerraDelPacifico
+   git checkout develop
+   ```
+
+2. **Instala las dependencias de la pizarra.** Se crea `node_modules`, que no se sube a git:
 
    ```bash
    cd tools/pizarra
    npm install
-   firebase login --reauth
-   firebase use --add          # elige tu proyecto
-   npm run desplegar
    ```
 
-   La interfaz queda en `https://<tu-proyecto>.web.app`.
-9. Entra a la pizarra y, en **Equipo**, registra a cada persona con su nombre y sus áreas (por ejemplo «programación, arquitectura» o «diseño, arte, historia»). El Orquestador usa estas áreas para saber a quién le toca resolver cada bloqueo.
+3. **Crea tu archivo de credenciales.** Copia `.env.example` como `.env`, en la misma carpeta `tools/pizarra`:
 
-## Configuración de cada persona
+   ```bash
+   cp .env.example .env        # en PowerShell: Copy-Item .env.example .env
+   ```
 
-1. Clona el repositorio y ejecuta `npm install` en `tools/pizarra`.
-2. Copia `.env.example` como `.env` y escribe tu correo y contraseña de la pizarra. El archivo `.env` no se sube a git.
-3. Abre Claude Code en la raíz del repositorio. Te pedirá aprobar el servidor MCP `pizarra` (definido en `.mcp.json`): apruébalo.
-4. Prueba con: *«¿Cómo vamos con el proyecto?»*.
+   Ábrelo y completa tu correo y tu contraseña de la pizarra:
+
+   ```
+   PIZARRA_EMAIL=tu-correo@gmail.com
+   PIZARRA_PASSWORD=tu-contraseña
+   ```
+
+   `.env` está en `.gitignore`: **nunca se sube** y cada persona tiene el suyo.
+
+4. **Comprueba la conexión** antes de abrir Claude. Sigues dentro de `tools/pizarra`:
+
+   ```bash
+   npm run resumen
+   ```
+
+   Debe mostrar `PIZARRA — La Guerra del Pacífico (sesión de …)` con el estado del proyecto. Si muestra un error, ve a [Problemas frecuentes](#problemas-frecuentes).
+
+5. **Abre Claude Code en la raíz del repositorio**, la carpeta `laGuerraDelPacifico`, no `tools/pizarra`:
+
+   ```bash
+   cd ../..
+   claude
+   ```
+
+   La primera vez te pregunta si quieres usar el servidor MCP **`pizarra`**, definido en `.mcp.json`. Elige **aprobar**.
+
+6. **Verifica dentro de Claude Code:**
+   - Escribe `/mcp`: el servidor `pizarra` debe aparecer como conectado.
+   - Pregunta *«¿cómo vamos con el proyecto?»*: Claude debe responder con el estado de la pizarra.
+
+Desde ese momento, cada chat nuevo empieza con el resumen de la pizarra: tus bloqueos pendientes, las novedades del equipo y lo que quedó de la última sesión. Claude sigue el protocolo de `CLAUDE.md`.
+
+### Problemas frecuentes
+
+| Mensaje | Solución |
+|---|---|
+| `Faltan PIZARRA_EMAIL y PIZARRA_PASSWORD` | No existe `tools/pizarra/.env` o le faltan datos (paso 3). |
+| `auth/invalid-credential` | Correo o contraseña incorrectos en `.env`. Prueba entrar a la web con los mismos datos. |
+| `permission-denied` / «Sin acceso» en la web | Tu correo no está en `firestore.rules`. Pídele al administrador que te agregue. |
+| `Cannot find package` / `ERR_MODULE_NOT_FOUND` | Falta `npm install` en `tools/pizarra` (paso 2). |
+| `[Pizarra] No disponible` al iniciar un chat | Igual que el anterior, o Node.js no está instalado o no está en el PATH. |
+| `/mcp` no muestra `pizarra` | Abriste Claude fuera de la raíz del repositorio, o rechazaste el servidor. Para que vuelva a preguntar: `claude mcp reset-project-choices`. |
+| Hiciste `git pull` y algo dejó de funcionar | Ejecuta `npm install` de nuevo en `tools/pizarra` y reinicia Claude Code. |
+
+## Sumar a una persona
+
+Lo hace alguien con acceso al proyecto de Firebase. Hacen falta los tres pasos:
+
+1. **Firebase → Authentication → Usuarios → Agregar usuario**, con su correo y una contraseña temporal.
+2. **Agrega su correo a la lista de `firestore.rules`** y publica las reglas. Sin este paso verá «Sin acceso».
+
+   ```bash
+   cd tools/pizarra
+   firebase deploy --only firestore:rules
+   ```
+
+   Después haz commit del cambio, para que nadie lo pierda en un despliegue futuro.
+3. En la pizarra web, ve a **Equipo** y regístrala con su nombre y sus áreas. El Orquestador usa las áreas para saber a quién preguntarle cada cosa.
+
+## Configuración del proyecto Firebase (ya está hecha)
+
+Queda como referencia, por si hubiera que montar la pizarra en otro proyecto.
+
+1. Crear el proyecto en la [consola de Firebase](https://console.firebase.google.com), en el plan **Spark** (gratuito).
+2. **Authentication → Método de acceso:** habilitar **Correo electrónico/contraseña**. En **Configuración → Acciones del usuario**, desmarcar **Habilitar creación (registro)**.
+3. **Firestore Database → Crear base de datos** en modo producción.
+4. Registrar una app web y copiar su `firebaseConfig` en `web/config.js`. No es secreta: la seguridad la dan las reglas.
+5. Vincular el proyecto en `.firebaserc` (`firebase use --add`) y publicar con `npm run desplegar`.
 
 ## Uso diario
 

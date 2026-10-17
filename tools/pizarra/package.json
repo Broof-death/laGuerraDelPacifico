@@ -4,6 +4,9 @@
   "private": true,
   "description": "Pizarra del proyecto La Guerra del Pacífico: tablero compartido de tareas, bloqueos y decisiones, conectado a Claude Code por MCP.",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "mcp": "node mcp/server.js",
     "resumen": "node scripts/resumen.js",
