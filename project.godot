@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="La Guerra del Pacifico"
+run/main_scene="res://main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
@@ -28,3 +29,8 @@ window/stretch/aspect="expand"
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+reflections/sky_reflections/texture_array_reflections.mobile=true
+
+[xr]
+
+shaders/enabled=true
