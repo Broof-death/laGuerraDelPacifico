@@ -1,0 +1,87 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://client/camera/rts_camera.tscn" id="1_cam"]
+[ext_resource type="Script" path="res://procedural_floor.gd" id="2_floor"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+sky_top_color = Color(0.32, 0.52, 0.8, 1)
+sky_horizon_color = Color(0.74, 0.8, 0.86, 1)
+ground_bottom_color = Color(0.45, 0.4, 0.34, 1)
+ground_horizon_color = Color(0.74, 0.8, 0.86, 1)
+sun_angle_max = 30.0
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 3
+ambient_light_sky_contribution = 0.5
+ambient_light_energy = 0.35
+tonemap_mode = 3
+fog_enabled = true
+fog_light_color = Color(0.74, 0.8, 0.86, 1)
+fog_mode = 1
+fog_density = 1.0
+fog_depth_curve = 1.5
+fog_depth_begin = 2500.0
+fog_depth_end = 6000.0
+fog_sky_affect = 0.0
+
+[sub_resource type="StandardMaterial3D" id="sand_mat"]
+metallic_specular = 0.0
+albedo_color = Color(0.64, 0.52, 0.36, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="water_mat"]
+albedo_color = Color(0.03, 0.14, 0.24, 1)
+metallic_specular = 0.7
+roughness = 0.3
+
+[sub_resource type="PlaneMesh" id="water_mesh"]
+material = SubResource("water_mat")
+size = Vector2(8000, 10000)
+
+[sub_resource type="StandardMaterial3D" id="wet_sand_mat"]
+metallic_specular = 0.0
+albedo_color = Color(0.55, 0.45, 0.32, 1)
+roughness = 0.9
+
+[sub_resource type="PlaneMesh" id="beach_mesh"]
+material = SubResource("wet_sand_mat")
+size = Vector2(24, 10000)
+
+[node name="Battlefield" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 50, 0)
+light_energy = 0.85
+shadow_enabled = true
+directional_shadow_max_distance = 300.0
+
+[node name="RtsCamera" parent="." instance=ExtResource("1_cam")]
+map_bounds = Rect2(-3000, -3000, 6000, 6000)
+initial_zoom = 0.55
+
+[node name="Tierra" type="Node3D" parent="."]
+
+[node name="ProceduralFloor" type="Node3D" parent="Tierra"]
+script = ExtResource("2_floor")
+chunk_size = 256.0
+view_radius = 12
+floor_material = SubResource("sand_mat")
+with_collision = false
+
+[node name="Playa" type="MeshInstance3D" parent="Tierra"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 238, 0.12, 0)
+mesh = SubResource("beach_mesh")
+cast_shadow = 0
+
+[node name="Mar" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4250, 0.3, 0)
+mesh = SubResource("water_mesh")
+cast_shadow = 0

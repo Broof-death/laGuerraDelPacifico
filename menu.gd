@@ -14,7 +14,9 @@ const BUTTON_HOVER_COLOR := Color(0.2, 0.2, 0.2)
 		background_texture = value
 		if is_node_ready():
 			_apply_background()
-@export_file("*.tscn") var start_scene: String = "res://node_3d.tscn"  ## Escena que carga "Comenzar"
+@export_file("*.tscn") var start_scene: String = "res://main/match.tscn"  ## Escena que carga "Comenzar"
+## Unidades de infantería por jugador de la partida local de prueba (provisional, T-017).
+@export var test_units_per_player: int = 100
 
 var _selected_button: Button
 
@@ -69,6 +71,9 @@ func _on_start_pressed() -> void:
 	if start_scene.is_empty():
 		push_warning("Menu: no hay escena asignada a 'start_scene'.")
 		return
+	# Partida local en modo un jugador (provisional hasta el menú de modos de T-038).
+	Session.config.mode = MatchConfig.Mode.SINGLE
+	Session.config.units_per_player = maxi(Session.config.units_per_player, test_units_per_player)
 	get_tree().change_scene_to_file(start_scene)
 
 
