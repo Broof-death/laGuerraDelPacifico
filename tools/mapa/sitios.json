@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "descripcion": "Sitios clave ampliados (lupas) del pipeline del mapa. Mecanismo y límites: ADR-009 §1b. Licencias de escala y fuentes de cada coordenada: docs/historia/sitios-clave-escala.md. Validar con: node tools/mapa/validar_sitios.mjs",
+  "tarea": "T-040",
+  "decisiones": ["ADR-009", "ADR-014", "ADR-015"],
+  "estado": "provisional: los sitios arica, alto_alianza_tacna, dolores y pisagua dependen de Q-012",
+  "caja": {
+    "lat_norte": -11.5,
+    "lat_sur": -33.5,
+    "lon_oeste": -78.0,
+    "lon_este": -67.0,
+    "decision": "ADR-014"
+  },
+  "proyeccion": {
+    "tipo": "transversa_mercator",
+    "elipsoide": "WGS84",
+    "lon_0": -72.5,
+    "lat_0": -22.5,
+    "k_0": 1.0,
+    "escala": 20
+  },
+  "lupa_por_defecto": {
+    "w_factor": 1.0,
+    "rho_c": 0.6,
+    "nota": "w = w_factor * r. Cada sitio puede bajar rho_c hasta 0,5 (límite de ADR-009). w_factor = 1 en todos los sitios (valor por defecto de ADR-009)."
+  },
+  "sitios": [
+    {
+      "id": "lima_callao",
+      "nombre": "Lima, Callao, Chorrillos y Miraflores",
+      "lat": -12.115,
+      "lon": -77.05,
+      "radio_real_km": 15.0,
+      "k": 4,
+      "rho_c": 0.6,
+      "motivo": "Capital del Perú y su puerto y base naval (bloqueo del Callao, 1880). Batallas de San Juan y Chorrillos (13 ene 1881) y de Miraflores (15 ene 1881) y ocupación de Lima (17 ene 1881). Se agrupan en un solo sitio, como pide ADR-009.",
+      "puntos_nucleo": [
+        { "nombre": "Callao", "lat": -12.056, "lon": -77.146, "fuente": "geografia-1879 §5.1 (A)" },
+        { "nombre": "Lima", "lat": -12.046, "lon": -77.043, "fuente": "geografia-1879 §5.1 (A)" },
+        { "nombre": "Miraflores", "lat": -12.121, "lon": -77.030, "fuente": "geografia-1879 §5.1 (A)" },
+        { "nombre": "Chorrillos", "lat": -12.169, "lon": -77.024, "fuente": "geografia-1879 §5.1 (A)" },
+        { "nombre": "Batalla de San Juan (coordenada del artículo)", "lat": -12.1756, "lon": -76.9564, "fuente": "es.wikipedia Batalla de San Juan y Chorrillos" },
+        { "nombre": "Reductos de Miraflores (ubicación aproximada)", "lat": -12.1074, "lon": -77.0070, "fuente": "es.wikipedia Batalla de Miraflores (marcada como aproximada)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#lima_callao"
+    },
+    {
+      "id": "ilo_pacocha",
+      "nombre": "Ilo y Pacocha",
+      "lat": -17.64,
+      "lon": -71.34,
+      "radio_real_km": 2.0,
+      "k": 3,
+      "rho_c": 0.6,
+      "motivo": "Puerto del desembarco chileno de febrero y marzo de 1880 y base de la campaña de Tacna y Arica; cabecera del ferrocarril a Moquegua.",
+      "puntos_nucleo": [
+        { "nombre": "Ilo / Pacocha", "lat": -17.640, "lon": -71.340, "fuente": "geografia-1879 §5.1 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#ilo_pacocha"
+    },
+    {
+      "id": "los_angeles_moquegua",
+      "nombre": "Los Ángeles y Moquegua",
+      "lat": -17.172,
+      "lon": -70.917,
+      "radio_real_km": 5.0,
+      "k": 3,
+      "rho_c": 0.6,
+      "motivo": "Combate de Los Ángeles (22 mar 1880), en el cerro de ese nombre, y la ciudad de Moquegua, a unos 6 km.",
+      "puntos_nucleo": [
+        { "nombre": "Cerro Los Ángeles (coordenada del artículo)", "lat": -17.1506, "lon": -70.8984, "fuente": "es.wikipedia Batalla de Los Ángeles (1880)" },
+        { "nombre": "Moquegua", "lat": -17.194, "lon": -70.935, "fuente": "geografia-1879 §5.1 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#los_angeles_moquegua"
+    },
+    {
+      "id": "alto_alianza_tacna",
+      "nombre": "Alto de la Alianza (Tacna)",
+      "lat": -18.0003,
+      "lon": -70.2942,
+      "radio_real_km": 3.5,
+      "k": 3,
+      "rho_c": 0.5,
+      "motivo": "Batalla del Alto de la Alianza o de Tacna (26 may 1880), en la meseta de Intiorko: línea aliada de unos 2,5 km con cuatro reductos. PROVISIONAL (Q-012): con Arica a ~53 km, el núcleo no alcanza a la ciudad de Tacna (~4,8 km).",
+      "puntos_nucleo": [
+        { "nombre": "Meseta de Intiorko (coordenada del artículo)", "lat": -18.0003, "lon": -70.2942, "fuente": "es.wikipedia Batalla del Alto de la Alianza" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#alto_alianza_tacna"
+    },
+    {
+      "id": "arica",
+      "nombre": "Arica y su Morro",
+      "lat": -18.483,
+      "lon": -70.315,
+      "radio_real_km": 3.0,
+      "k": 3,
+      "rho_c": 0.5,
+      "motivo": "Asalto y toma del Morro de Arica (7 jun 1880), con los fuertes Ciudadela (cerro Chuño) y del Este (cerro Aniani) y las baterías del norte; combate naval del Huáscar y el Manco Cápac en la bahía (27 feb 1880). PROVISIONAL (Q-012).",
+      "puntos_nucleo": [
+        { "nombre": "Morro de Arica (cumbre)", "lat": -18.4803, "lon": -70.3236, "fuente": "es.wikipedia Morro de Arica" },
+        { "nombre": "Arica (ciudad)", "lat": -18.478, "lon": -70.321, "fuente": "geografia-1879 §5.1 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#arica"
+    },
+    {
+      "id": "dolores",
+      "nombre": "Dolores (cerro San Francisco)",
+      "lat": -19.6667,
+      "lon": -69.95,
+      "radio_real_km": 2.5,
+      "k": 3,
+      "rho_c": 0.5,
+      "motivo": "Batalla de Dolores o San Francisco (19 nov 1879): cerros San Francisco, Dolores, San Bartolo y Tres Clavos, y la aguada de El Porvenir. PROVISIONAL (Q-012): con Pisagua a ~28 km no caben las dos lupas completas.",
+      "puntos_nucleo": [
+        { "nombre": "Pozo de Dolores / cerro San Francisco (coordenada del artículo)", "lat": -19.6667, "lon": -69.95, "fuente": "es.wikipedia Batalla de Dolores" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#dolores"
+    },
+    {
+      "id": "tarapaca",
+      "nombre": "Quebrada de Tarapacá",
+      "lat": -19.935,
+      "lon": -69.525,
+      "radio_real_km": 4.0,
+      "k": 3,
+      "rho_c": 0.5,
+      "motivo": "Batalla de Tarapacá (27 nov 1879), victoria peruana: la quebrada de Tarapacá entre Quillahuasa y Huarasiña, con la cuesta de Visagra y las alturas. El radio está limitado por Iquique y Dolores (holgura < 2 km); la extensión real del campo queda PENDIENTE de verificar.",
+      "puntos_nucleo": [
+        { "nombre": "Tarapacá (pueblo)", "lat": -19.920, "lon": -69.510, "fuente": "geografia-1879 §5.1 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#tarapaca"
+    },
+    {
+      "id": "iquique",
+      "nombre": "Iquique",
+      "lat": -20.207,
+      "lon": -70.154,
+      "radio_real_km": 3.0,
+      "k": 4,
+      "rho_c": 0.6,
+      "motivo": "Principal puerto salitrero del Perú; bloqueo y combate naval de Iquique (21 may 1879), con la Esmeralda hundida frente a la ciudad; ocupación chilena (23 nov 1879).",
+      "puntos_nucleo": [
+        { "nombre": "Combate naval de Iquique (coordenada del artículo)", "lat": -20.2016, "lon": -70.1559, "fuente": "es.wikipedia Combate naval de Iquique" },
+        { "nombre": "Iquique (ciudad)", "lat": -20.214, "lon": -70.152, "fuente": "geografia-1879 §5.1 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#iquique"
+    },
+    {
+      "id": "calama_topater",
+      "nombre": "Calama y los vados del Loa (Topáter)",
+      "lat": -22.462,
+      "lon": -68.913,
+      "radio_real_km": 4.0,
+      "k": 4,
+      "rho_c": 0.6,
+      "motivo": "Combate de Topáter (23 mar 1879): defensa boliviana de los vados de Yalquincha, Topáter, Carbajal y Huaita sobre el Loa, en una línea de unas tres millas, y el oasis de Calama.",
+      "puntos_nucleo": [
+        { "nombre": "Combate de Topáter (coordenada del artículo)", "lat": -22.4649, "lon": -68.9051, "fuente": "es.wikipedia Combate de Topáter" },
+        { "nombre": "Calama", "lat": -22.456, "lon": -68.925, "fuente": "geografia-1879 §5.2 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#calama_topater"
+    },
+    {
+      "id": "antofagasta",
+      "nombre": "Antofagasta",
+      "lat": -23.65,
+      "lon": -70.40,
+      "radio_real_km": 3.0,
+      "k": 4,
+      "rho_c": 0.6,
+      "motivo": "Puerto boliviano de la Compañía de Salitres y Ferrocarril de Antofagasta; su ocupación chilena (14 feb 1879) inicia la guerra. Cabecera del ferrocarril al Salar del Carmen.",
+      "puntos_nucleo": [
+        { "nombre": "Antofagasta", "lat": -23.650, "lon": -70.400, "fuente": "geografia-1879 §5.2 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#antofagasta"
+    },
+    {
+      "id": "valparaiso",
+      "nombre": "Valparaíso",
+      "lat": -33.047,
+      "lon": -71.62,
+      "radio_real_km": 3.0,
+      "k": 3,
+      "rho_c": 0.6,
+      "motivo": "Puerto principal y base naval de Chile; lugar del Pacto de Tregua (4 abr 1884). No fue campo de batalla: se amplía como base y puerto clave.",
+      "puntos_nucleo": [
+        { "nombre": "Valparaíso", "lat": -33.047, "lon": -71.620, "fuente": "geografia-1879 §5.3 (A)" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#valparaiso"
+    }
+  ],
+  "sin_lupa": [
+    { "id": "pisagua", "nombre": "Pisagua", "lat": -19.599, "lon": -70.215, "fuente": "es.wikipedia Desembarco y combate de Pisagua", "motivo": "Desembarco del 2 nov 1879. PROVISIONAL (Q-012): sin lupa porque está a ~28 km de Dolores; queda a 1:20." },
+    { "id": "punta_gruesa", "nombre": "Punta Gruesa", "lat": -20.36, "lon": -70.18, "fuente": "geografia-1879 §5.1 (B)", "motivo": "Combate naval (21 may 1879); en el mar rige la escala del mapa (ADR-012). Cae en el anillo de la lupa de Iquique." },
+    { "id": "angamos", "nombre": "Punta Angamos", "lat": -23.02, "lon": -70.515, "fuente": "geografia-1879 §5.2 (A)", "motivo": "Combate naval de Angamos (8 oct 1879), mar adentro; en el mar rige la escala del mapa (ADR-012)." },
+    { "id": "tacna_ciudad", "nombre": "Tacna (ciudad)", "lat": -18.013, "lon": -70.251, "fuente": "geografia-1879 §5.1 (A)", "motivo": "PROVISIONAL (Q-012): queda en el anillo de la lupa del Alto de la Alianza." },
+    { "id": "iluga", "nombre": "Iluga (reunión chilena antes de Tarapacá)", "lat": -19.9751, "lon": -69.5589, "fuente": "OpenStreetMap, citado en es.wikipedia Batalla de Tarapacá", "motivo": "Punto de partida de la marcha chilena, no campo de batalla: queda en la transición de la lupa de Tarapacá." },
+    { "id": "mejillones", "nombre": "Mejillones", "lat": -23.10, "lon": -70.45, "fuente": "geografia-1879 §5.2 (A)", "motivo": "Puerto de guano sin combate terrestre." },
+    { "id": "ancon", "nombre": "Ancón", "lat": -11.773, "lon": -77.176, "fuente": "geografia-1879 §5.1 (A)", "motivo": "Lugar del tratado de 1883, sin combate. Cae en el anillo de la lupa de Lima." },
+    { "id": "pisco", "nombre": "Pisco", "lat": -13.71, "lon": -76.204, "fuente": "geografia-1879 §5.1 (A)", "motivo": "Desembarco chileno de 1880 sin combate mayor." },
+    { "id": "lurin_curayaco", "nombre": "Lurín (desembarco de Curayaco)", "lat": -12.28, "lon": -76.90, "fuente": "geografia-1879 §6.3 (aprox.)", "motivo": "Desembarco y campamento chileno (dic 1880), a unos 17 km de San Juan: fuera del núcleo de Lima, en su anillo." },
+    { "id": "brena_mantaro", "nombre": "Valle del Mantaro (Concepción, Huancayo, Marcavalle, Pucará)", "lat": -12.07, "lon": -75.21, "fuente": "coordenada aproximada de Huancayo, PENDIENTE de verificar", "motivo": "Campaña de la Breña: dentro de la caja geográfica, pero tratada como evento o texto por ADR-014." }
+  ],
+  "fuera_del_mapa": [
+    { "id": "huamachuco", "nombre": "Huamachuco", "lat": -7.812, "lon": -78.049, "fuente": "geografia-1879 §5.5", "motivo": "Batalla del 10 jul 1883, campaña de la Breña", "tratamiento": "Evento o texto (ADR-014)" },
+    { "id": "punta_arenas", "nombre": "Punta Arenas", "lat": -53.16, "lon": -70.91, "fuente": "geografia-1879 §5.5", "motivo": "Llegada de la corbeta Unión en 1879", "tratamiento": "Evento o texto (ADR-014)" }
+  ]
+}
