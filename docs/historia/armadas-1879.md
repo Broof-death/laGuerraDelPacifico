@@ -101,7 +101,7 @@ Otros buques peruanos (transportes y auxiliares): Limeña, Oroya, Chalaco, Talis
 #### Esmeralda: corbeta de madera
 | Dato | Valor | Fuente | Confianza |
 |---|---|---|---|
-| Construcción | Pitcher, Northfleet (Inglaterra). Botada en 1854–1855 | Wikipedia en inglés; Hispanopedia | [C] fecha |
+| Construcción | Pitcher, Northfleet (Inglaterra). Quilla puesta en dic. 1854; botada el 26 jun. 1855; alta en la Armada de Chile el 18 sep. 1855 | Wikipedia en inglés, «Chilean corvette Esmeralda» | [D] |
 | Arqueo / desplazamiento | 854 t (arqueo Builder's Old Measurement) / ~850 t | Wikipedia; tabla de la campaña naval | [C] |
 | Eslora | 64 m total **sin bauprés**; 55 m entre perpendiculares; 51 m de quilla | Wikipedia en inglés | [D] |
 | Manga | 9,75–9,8 m | Wikipedia; Hispanopedia | [D] |

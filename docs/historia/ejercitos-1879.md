@@ -21,12 +21,12 @@ Las cifras de efectivos de la época varían mucho según se cuente el ejército
 
 | País | Cifra | Fuente | Confianza |
 |---|---|---|---|
-| Chile | 2.440 | Sater 2007, p. 58 | [C] |
+| Chile | 2.440 | Sater 2007, citado en Wikipedia | [C] |
 | Chile | 2.694 | Cifra citada en el artículo «War of the Pacific» (Wikipedia en inglés), sección de organización | [C] |
 | Chile | ~2.400 (3.776 en 1867) | Verbal Stockmayer, pp. 140–143, citado en Wikipedia | [C] |
-| Perú | 5.557 | Sater 2007, p. 45 | [C] |
+| Perú | 5.557 | Sater 2007, citado en Wikipedia | [C] |
 | Perú | 5.241 (7 batallones de infantería, 3 escuadrones de caballería, 2 regimientos de artillería) | Wikipedia en inglés, sección de organización | [C] |
-| Bolivia | 1.687 | Sater 2007, p. 51 | [C] |
+| Bolivia | 1.687 | Sater 2007, citado en Wikipedia | [C] |
 | Bolivia | hasta 2.175 (3 regimientos de infantería, 2 escuadrones de caballería, 2 secciones de artillería) | Wikipedia en inglés, sección de organización | [C] |
 
 **Rango recomendado para diseño:** Chile 2.400–2.700; Perú 5.200–5.600; Bolivia 1.700–2.200.
@@ -43,7 +43,7 @@ Los tres países tenían una **guardia nacional** (milicia cívica) mucho mayor 
 |---|---|---|---|---|
 | Desembarco en Pisagua (nov. 1879) | ~9.500 desembarcados | — | Wikipedia en inglés | [C] |
 | Batalla de Tacna o Alto de la Alianza (26 may. 1880) | 14.147 | 8.500 peruanos + 5.150 bolivianos | Wikipedia en inglés | [C] |
-| Campaña de Lima (ene. 1881) | 27.000 frente a Lima (más 8.000 de ocupación y 6.000 en Chile) | «Ejército de Lima» 25.000–35.000 | Sater 2007, pp. 263 y 274 | [C] |
+| Campaña de Lima (ene. 1881) | 27.000 frente a Lima (más 8.000 de ocupación y 6.000 en Chile) | «Ejército de Lima» 25.000–35.000 | Sater 2007, citado en Wikipedia | [C] |
 | Campaña de Lima, total chileno | ~41.000 (tras sumar ~20.000 hombres) | — | Wikipedia en inglés | [C] |
 | Combate de Los Ángeles (mar. 1880) | 3.642 | ~1.300 peruanos | Wikipedia en inglés | [C] |
 
@@ -85,7 +85,7 @@ Fuente de este apartado: Wikipedia en inglés, «War of the Pacific», sección 
 
 | Arma | Usuarios en la guerra | Mecanismo y calibre | Cadencia aprox. | Alcance eficaz / máx. aprox. | Confianza |
 |---|---|---|---|---|---|
-| Comblain II (M1874 chileno) | Chile (principal); también Perú y Bolivia | Bloque descendente, retrocarga, 11 mm (11×50R) | ~10 disparos/min | ~300 m eficaz / ~1.300 m máx. | [D] Wikipedia «Comblain» |
+| Comblain M1874 chileno | Chile (principal); también Perú y Bolivia | Bloque descendente, retrocarga, 11 mm (11×50R) | ~10 disparos/min | ~300 m eficaz / ~1.300 m máx. | [D] Wikipedia «Comblain» |
 | Gras M1874 | Chile | Cerrojo, retrocarga, 11 mm | ~8–12 disparos/min | ~400–600 m eficaz / alza hasta ~1.800 m | [P] |
 | Remington de bloque rodante | Bolivia (Colorados), Chile y Perú en menor número | Bloque rodante, retrocarga, ~11 mm | ~10–13 disparos/min | ~400 m eficaz / ~1.000 m+ | [P] |
 | Peabody / Peabody-Martini | Perú | Bloque basculante, retrocarga, ~11 mm | ~10 disparos/min | ~400 m eficaz | [P] |
@@ -187,11 +187,11 @@ Son **propuestas para diseño** basadas en los hechos de arriba, no decisiones. 
 Consultadas en esta tarea (octubre de 2026):
 
 - Wikipedia en inglés, «War of the Pacific», secciones de efectivos, organización, armamento y bajas. https://en.wikipedia.org/wiki/War_of_the_Pacific. Es una fuente secundaria; sus cifras citan sobre todo a:
-  - Sater, William F. *Andean Tragedy: Fighting the War of the Pacific, 1879–1884*. Lincoln: University of Nebraska Press, 2007 (pp. 45, 51, 58, 263, 274).
+  - Sater, William F. *Andean Tragedy: Fighting the War of the Pacific, 1879–1884*. Lincoln: University of Nebraska Press, 2007. No se consultó el libro: las cifras se tomaron de Wikipedia, cuyas notas remiten a las pp. 45, 51, 58, 263 y 274 (páginas sin verificar).
   - Machuca, Francisco A. *Las cuatro campañas de la Guerra del Pacífico* (citado en Wikipedia, p. 341).
   - Bulnes, Gonzalo. *Guerra del Pacífico* (cifras de Chorrillos y Miraflores citadas en Wikipedia).
   - Verbal Stockmayer (pp. 140–143, sobre la reducción del ejército chileno).
-- Wikipedia en inglés, «Comblain» (datos técnicos del Comblain II). https://en.wikipedia.org/wiki/Comblain
+- Wikipedia en inglés, «Comblain» (datos técnicos del Comblain M1874 chileno; el artículo no usa el nombre «Comblain II»). https://en.wikipedia.org/wiki/Comblain
 
 Obras de referencia recomendadas para completar los datos [P] (no consultadas directamente en esta tarea):
 
