@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FactionDef" format=3]
+
+[ext_resource type="Script" path="res://core/defs/building_def.gd" id="1_55nuv"]
+[ext_resource type="Script" path="res://core/defs/faction_def.gd" id="2_xsn2l"]
+[ext_resource type="Script" path="res://core/defs/resource_def.gd" id="3_bh70u"]
+[ext_resource type="Resource" path="res://data/resources/recurso_prueba.tres" id="4_fjp4j"]
+[ext_resource type="Script" path="res://core/defs/unit_def.gd" id="5_g7uno"]
+[ext_resource type="Resource" path="res://data/units/comun/infanteria_prueba.tres" id="6_eil0m"]
+
+[resource]
+script = ExtResource("2_xsn2l")
+id = &"faccion_prueba"
+display_name = "Facción de prueba"
+color = Color(0.6, 0.6, 0.6, 1)
+units = Array[ExtResource("5_g7uno")]([ExtResource("6_eil0m")])
+start_resources = Dictionary[ExtResource("3_bh70u"), int]({
+ExtResource("4_fjp4j"): 500
+})
+start_units = Array[ExtResource("5_g7uno")]([ExtResource("6_eil0m")])

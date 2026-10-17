@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UnitDef" format=3]
+
+[ext_resource type="Script" path="res://core/defs/building_def.gd" id="1_0d87n"]
+[ext_resource type="Script" path="res://core/defs/resource_def.gd" id="2_ne5k8"]
+[ext_resource type="Resource" path="res://data/resources/recurso_prueba.tres" id="3_uqm53"]
+[ext_resource type="Script" path="res://core/defs/unit_def.gd" id="4_d0dd0"]
+[ext_resource type="Script" path="res://core/defs/weapon_def.gd" id="5_n8mrx"]
+
+[resource]
+script = ExtResource("4_d0dd0")
+id = &"infanteria_prueba"
+display_name = "Infantería de prueba"
+description = "Unidad mínima para las pruebas del núcleo de simulación (T-004). No es contenido histórico."
+vision_range = 200.0
+cost = Dictionary[ExtResource("2_ne5k8"), int]({
+ExtResource("3_uqm53"): 50
+})
+placeholder_shape = 2
+placeholder_size = Vector3(1, 2, 1)
+placeholder_label = "INF"
