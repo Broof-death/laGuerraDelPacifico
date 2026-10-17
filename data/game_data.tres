@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GameData" format=3]
+
+[ext_resource type="Script" path="res://core/defs/building_def.gd" id="1_lhs1r"]
+[ext_resource type="Script" path="res://core/defs/faction_def.gd" id="2_pftn3"]
+[ext_resource type="Resource" path="res://data/factions/faccion_prueba.tres" id="3_7lvw4"]
+[ext_resource type="Script" path="res://core/defs/resource_def.gd" id="4_2ewf2"]
+[ext_resource type="Resource" path="res://data/resources/recurso_prueba.tres" id="5_vy2p8"]
+[ext_resource type="Script" path="res://core/defs/game_data.gd" id="6_1diyi"]
+[ext_resource type="Script" path="res://core/defs/unit_def.gd" id="7_cog1c"]
+[ext_resource type="Resource" path="res://data/units/comun/infanteria_prueba.tres" id="8_d15be"]
+
+[resource]
+script = ExtResource("6_1diyi")
+factions = Array[ExtResource("2_pftn3")]([ExtResource("3_7lvw4")])
+units = Array[ExtResource("7_cog1c")]([ExtResource("8_d15be")])
+resources = Array[ExtResource("4_2ewf2")]([ExtResource("5_vy2p8")])
