@@ -17,8 +17,8 @@ const SNAPSHOT_EVERY_TICKS: int = 2
 
 ## Lado de la celda de la SpatialGrid en metros (alineada con los sectores de T-010).
 const GRID_CELL_SIZE: float = 64.0
-## Lado del mapa en metros mientras T-010 no fije los límites reales (escala 1:20, ~125 km).
-const DEFAULT_MAP_SIZE: float = 125000.0
+## Lado del mapa en metros (ADR-009: 131 072 m centrados en el origen; ver MapGrid).
+const DEFAULT_MAP_SIZE: float = MapGrid.MAP_SIZE
 
 ## Ids de entidad: 0 = ninguna; el servidor los asigna correlativos desde 1 y no los reutiliza.
 const NO_ENTITY: int = 0
@@ -36,8 +36,10 @@ const MAX_IDS_PER_COMMAND: int = 512
 const MOVE_GROUP_MIN_UNITS: int = 8
 ## Límite de comandos por jugador y segundo (RATE_LIMIT).
 const RATE_LIMIT_COMMANDS_PER_SEC: int = 30
-## Límite de bytes de comandos por jugador y segundo (lo aplica el transporte en T-005).
+## Límite de bytes de comandos por jugador y segundo (lo aplica MatchServer al recibir).
 const RATE_LIMIT_BYTES_PER_SEC: int = 8192
+## Ventana de los límites de comandos, en milisegundos de tiempo real (sigue corriendo en pausa).
+const RATE_LIMIT_WINDOW_MSEC: int = 1000
 
 ## Acción actual de una entidad (EntityStore.action, 4 bits en los snapshots).
 enum Action {
