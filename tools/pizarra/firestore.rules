@@ -7,7 +7,8 @@ service cloud.firestore {
     function esMiembro() {
       return request.auth != null && request.auth.token.email in [
         'luis.delgadillo@solomonk.cl',
-        'fdoreyesvasquez@gmail.com'
+        'fdoreyesvasquez@gmail.com',
+        'alvaro.val95@gmail.com'
       ];
     }
 
