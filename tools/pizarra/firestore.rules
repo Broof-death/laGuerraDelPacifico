@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// Solo las personas de esta lista pueden leer o escribir en la pizarra.
+// Para sumar a alguien: agrega su correo aquí y ejecuta `npm run desplegar`.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function esMiembro() {
+      return request.auth != null && request.auth.token.email in [
+        'luis.delgadillo@solomonk.cl',
+        'fdoreyesvasquez@gmail.com',
+        'alvaro.val95@gmail.com'
+      ];
+    }
+
+    function estadoTareaValido() {
+      return request.resource.data.estado in
+        ['backlog', 'por_refinar', 'lista', 'en_progreso', 'bloqueada', 'en_revision', 'hecha', 'cancelada'];
+    }
+
+    // Nada se borra: las tareas se cancelan y las decisiones se reemplazan, para conservar la historia.
+    match /tareas/{id} {
+      allow read: if esMiembro();
+      allow create, update: if esMiembro() && estadoTareaValido();
+    }
+
+    match /propuestas/{id} {
+      allow read, create, update: if esMiembro();
+    }
+
+    match /preguntas/{id} {
+      allow read, create, update: if esMiembro();
+    }
+
+    match /decisiones/{id} {
+      allow read, create, update: if esMiembro();
+    }
+
+    match /sesiones/{id} {
+      allow read, create: if esMiembro();
+    }
+
+    match /config/{id} {
+      allow read, create, update: if esMiembro();
+    }
+
+    // El historial de actividad solo se agrega, nunca se modifica, y queda firmado por quien lo escribe.
+    match /actividad/{id} {
+      allow read: if esMiembro();
+      allow create: if esMiembro() && request.resource.data.quien == request.auth.token.email;
+    }
+
+    // Marca de "última lectura" de cada persona (para calcular las novedades).
+    match /lecturas/{email} {
+      allow read, write: if esMiembro() && request.auth.token.email == email;
+    }
+  }
+}
