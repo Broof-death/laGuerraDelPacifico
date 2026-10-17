@@ -32,6 +32,8 @@ enum Reject {
 	NOT_OWNER = 8,
 	TARGET_OUT_OF_BOUNDS = 9,
 	RATE_LIMITED = 10,
+	## El paquete del comando no se pudo decodificar (lo usa MatchServer).
+	MALFORMED = 11,
 }
 
 var type: Type = Type.NONE

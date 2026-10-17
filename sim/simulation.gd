@@ -21,7 +21,7 @@ var grid: SpatialGrid
 var queue: CommandQueue
 var groups: MoveGroups
 var game_data: GameData
-## Límites del mapa en el plano (x, z).
+## Límites del mapa en el plano (x, z). Por defecto, el mundo de ADR-009 centrado en el origen.
 var bounds: Rect2
 ## Azar del servidor con semilla de partida (sin garantía de determinismo entre máquinas).
 var rng: RandomNumberGenerator
@@ -40,11 +40,12 @@ var _visibility := VisibilitySystem.new()
 
 
 ## `data` debe tener el índice construido y válido (GameData.build_index() sin errores).
-func _init(data: GameData, p_seed: int = 0, map_size: float = SimConstants.DEFAULT_MAP_SIZE) -> void:
+## `p_bounds` vacío = MapGrid.world_rect() (131 072 m centrados; la celda de la rejilla es global).
+func _init(data: GameData, p_seed: int = 0, p_bounds: Rect2 = Rect2()) -> void:
 	game_data = data
-	bounds = Rect2(0.0, 0.0, map_size, map_size)
+	bounds = p_bounds if p_bounds.has_area() else MapGrid.world_rect()
 	store = EntityStore.new()
-	grid = SpatialGrid.new(map_size, map_size)
+	grid = SpatialGrid.new(bounds.size.x, bounds.size.y, bounds.position.x, bounds.position.y)
 	queue = CommandQueue.new()
 	groups = MoveGroups.new()
 	rng = RandomNumberGenerator.new()
@@ -76,8 +77,11 @@ func remove_entity(entity_id: int) -> bool:
 
 ## Recibe un comando de player_id (lo deduce el servidor del peer). Valida y lo encola para el
 ## próximo step(). Devuelve Command.Reject.OK o el motivo del rechazo.
-func submit_command(player_id: int, cmd: Command) -> Command.Reject:
-	return queue.submit(player_id, cmd, store, bounds, tick)
+## `now_msec`: reloj real para el límite de 30 comandos/s (MatchServer lo pasa para que la ventana
+## se renueve también en pausa). Si es negativo se usa el reloj de la simulación (tick * 50 ms).
+func submit_command(player_id: int, cmd: Command, now_msec: int = -1) -> Command.Reject:
+	var t: int = now_msec if now_msec >= 0 else tick * 1000 / SimConstants.TICK_RATE
+	return queue.submit(player_id, cmd, store, bounds, t)
 
 
 ## Avanza un tick fijo (TICK_DT). Datos puros.

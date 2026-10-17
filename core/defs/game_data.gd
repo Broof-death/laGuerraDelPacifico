@@ -72,6 +72,20 @@ func def_count() -> int:
 	return _defs.size()
 
 
+## Huella del catálogo (ids y tipos en orden de def_index, y recursos y facciones). Servidor y
+## cliente deben tener la misma: el orden de los arrays es parte del protocolo de red (ADR-007).
+## Se compara al conectarse (HELLO). Requiere build_index().
+func catalog_hash() -> int:
+	var parts := PackedStringArray()
+	for def: EntityDef in _defs:
+		parts.append("%s:%s" % [def.id, "U" if def is UnitDef else "B"])
+	for r: ResourceDef in resources:
+		parts.append("R:%s" % (r.id if r != null else &""))
+	for f: FactionDef in factions:
+		parts.append("F:%s" % (f.id if f != null else &""))
+	return "|".join(parts).hash() & 0xFFFFFFFF
+
+
 ## Definición por def_index, o null si no existe.
 func get_def(def_index: int) -> EntityDef:
 	if def_index < 0 or def_index >= _defs.size():

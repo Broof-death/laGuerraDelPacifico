@@ -32,7 +32,7 @@ static func make_game_data() -> GameData:
 
 
 static func make_sim(seed_value: int = 1) -> Simulation:
-	return Simulation.new(make_game_data(), seed_value, 10000.0)
+	return Simulation.new(make_game_data(), seed_value, Rect2(0.0, 0.0, 10000.0, 10000.0))
 
 
 ## Huella del estado completo de la simulación (para comparar determinismo).
