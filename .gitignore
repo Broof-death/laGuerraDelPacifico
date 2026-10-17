@@ -1,3 +1,17 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Dependencias de Node (se reinstalan con `npm install`)
+node_modules/
+
+# Secretos locales: credenciales de cada persona
+.env
+.env.*
+!.env.example
+
+# Firebase: caché de despliegue, logs y datos exportados del emulador
+.firebase/
+*-debug.log
+*.log
+emulador-datos/
