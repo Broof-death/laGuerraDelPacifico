@@ -112,7 +112,7 @@ func get_conn(player_id: int) -> Conn:
 ## PROVISIONAL hasta el arranque real de partida (facciones y unidades iniciales de GameData):
 ## coloca `units` unidades del def_index 0 por jugador, en bloques sobre un círculo de `radius` m
 ## alrededor del centro del mapa, mirando al centro.
-func spawn_test_armies(players: int, units: int, radius: float = 150.0) -> void:
+func spawn_test_armies(players: int, units: int, radius: float = 60.0) -> void:
 	if sim.max_hp_by_def.is_empty():
 		return
 	var center: Vector2 = sim.bounds.get_center()

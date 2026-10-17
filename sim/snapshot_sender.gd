@@ -35,6 +35,7 @@ var base_tick: int = -1
 # --- Estadísticas del último build() ---
 var last_bytes: int = 0
 var last_packets: int = 0
+var last_max_packet_bytes: int = 0
 var last_records: int = 0
 var last_removed: int = 0
 ## Cambios que no cupieron en el tope y quedaron para el siguiente snapshot.
@@ -64,7 +65,6 @@ var _empty := SnapshotState.new()
 var _r_kind := PackedByteArray()
 var _r_wi := PackedInt32Array()
 var _r_bi := PackedInt32Array()
-var _r_mask := PackedInt32Array()
 var _r_word := PackedInt64Array()
 var _r_bits := PackedInt32Array()
 var _r_prio := PackedInt32Array()
@@ -112,8 +112,9 @@ func build(world: SnapshotWorld, last_seq: int) -> Array[PackedByteArray]:
 	return packets
 
 
-## Recorre en orden de id el mundo y la base, y anota los registros: apariciones, cambios y bajas.
-## Devuelve la cantidad de registros.
+## Recorre en orden de id el mundo y la base, y anota los registros: apariciones, cambios y bajas,
+## con su prioridad y una estimación de su tamaño (el cálculo exacto de los campos se hace en
+## _encode y solo para lo que entra). Devuelve la cantidad de registros.
 func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 	var nw: int = world.count
 	var nb: int = base.ids.size()
@@ -122,7 +123,6 @@ func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 		_r_kind.resize(cap)
 		_r_wi.resize(cap)
 		_r_bi.resize(cap)
-		_r_mask.resize(cap)
 		_r_word.resize(cap)
 		_r_bits.resize(cap)
 		_r_prio.resize(cap)
@@ -130,8 +130,6 @@ func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 	var rk := _r_kind
 	var rwi := _r_wi
 	var rbi := _r_bi
-	var rmask := _r_mask
-	var rword := _r_word
 	var rbits := _r_bits
 	var rprio := _r_prio
 	var wid := world.ids
@@ -148,98 +146,66 @@ func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 	var pbit: int = 1 << pid
 	var max_age: int = 0
 	const BIG: int = 0x7FFFFFFF
-	const QM: int = SnapshotCodec.Q_MASK
-	const LIM: int = SnapshotCodec.DELTA_LIMIT
 	const POSM: int = SnapshotCodec.POS_MASK
+	const HM: int = 0xFF << 40
+	const HPM: int = 0xFF << 48
+	const AM: int = 0xF << 56
 	const APPEAR_BITS: int = 8 + 10 + 4 + 40 + 8 + 8 + 4
+	const DIED: int = SnapshotCodec.RemoveReason.DIED
+	const OUT: int = SnapshotCodec.RemoveReason.OUT_OF_VIEW
 	var nr: int = 0
 	var i: int = 0
 	var j: int = 0
 	while i < nw or j < nb:
 		var a: int = wid[i] if i < nw else BIG
 		var b: int = bid[j] if j < nb else BIG
-		if a < b:
+		if a == b:
+			if (wvis[i] & pbit) == 0 and wown[i] != pid:
+				rk[nr] = _K_REMOVED
+				rbi[nr] = j
+				rbits[nr] = OUT
+				nr += 1
+			else:
+				var diff: int = ww[i] ^ bw[j]
+				var prog_changed: bool = wprog[i] != bprog[j] and SnapshotCodec.action_uses_progress((ww[i] >> 56) & 0xF)
+				if diff != 0 or prog_changed:
+					var bits: int = 8
+					if diff & POSM:
+						bits += 16
+					if diff & HM:
+						bits += 8
+					if diff & HPM:
+						bits += 8
+					if diff & AM:
+						bits += 4
+					if prog_changed:
+						bits += 8
+					var age: int = mini(now - bfresh[j], _AGE_CAP)
+					if wcombat[i] != 0:
+						max_age = maxi(max_age, age)
+						age *= 2
+					rk[nr] = _K_UPDATE
+					rwi[nr] = i
+					rbi[nr] = j
+					rbits[nr] = bits
+					rprio[nr] = age
+					nr += 1
+			i += 1
+			j += 1
+		elif a < b:
 			if (wvis[i] & pbit) != 0 or wown[i] == pid:
-				var aw: int = ww[i]
 				rk[nr] = _K_APPEAR
 				rwi[nr] = i
 				rbi[nr] = -1
-				rmask[nr] = SnapshotCodec.FLAG_APPEAR
-				rword[nr] = aw
-				rbits[nr] = SnapshotCodec.appear_payload_bits((aw >> 56) & 0xF) + 8
+				rbits[nr] = APPEAR_BITS + (8 if SnapshotCodec.action_uses_progress((ww[i] >> 56) & 0xF) else 0)
 				rprio[nr] = _PRIO_APPEAR
 				nr += 1
 			i += 1
-		elif b < a:
-			rk[nr] = _K_REMOVED
-			rwi[nr] = -1
-			rbi[nr] = j
-			rmask[nr] = SnapshotCodec.RemoveReason.DIED
-			nr += 1
-			j += 1
 		else:
-			if (wvis[i] & pbit) == 0 and wown[i] != pid:
-				rk[nr] = _K_REMOVED
-				rwi[nr] = i
-				rbi[nr] = j
-				rmask[nr] = SnapshotCodec.RemoveReason.OUT_OF_VIEW
-				nr += 1
-			else:
-				var nwd: int = ww[i]
-				var owd: int = bw[j]
-				var diff: int = nwd ^ owd
-				if diff != 0 or (wprog[i] != bprog[j] and SnapshotCodec.action_uses_progress((nwd >> 56) & 0xF)):
-					var mask: int = 0
-					var bits: int = 8
-					var res: int = owd
-					if (diff & POSM) != 0:
-						var oqx: int = owd & QM
-						var oqz: int = (owd >> 20) & QM
-						var dx: int = (nwd & QM) - oqx
-						var dz: int = ((nwd >> 20) & QM) - oqz
-						# Redondeo a pasos de 0,25 m (alejándose de cero en los medios).
-						var ddx: int = (dx + (1 if dx > 0 else (-1 if dx < 0 else 0))) / 2
-						var ddz: int = (dz + (1 if dz > 0 else (-1 if dz < 0 else 0))) / 2
-						if ddx >= -LIM and ddx <= LIM and ddz >= -LIM and ddz <= LIM:
-							if ddx != 0 or ddz != 0:
-								var rqx: int = clampi(oqx + ddx * 2, 0, QM)
-								var rqz: int = clampi(oqz + ddz * 2, 0, QM)
-								mask |= SnapshotCodec.FLAG_POS_DELTA
-								bits += 16
-								res = (res & ~POSM) | rqx | (rqz << 20)
-						else:
-							mask |= SnapshotCodec.FLAG_POS_ABS
-							bits += 40
-							res = (res & ~POSM) | (nwd & POSM)
-					if (diff & (0xFF << 40)) != 0:
-						mask |= SnapshotCodec.FLAG_HEADING
-						bits += 8
-						res = (res & ~(0xFF << 40)) | (nwd & (0xFF << 40))
-					if (diff & (0xFF << 48)) != 0:
-						mask |= SnapshotCodec.FLAG_HP
-						bits += 8
-						res = (res & ~(0xFF << 48)) | (nwd & (0xFF << 48))
-					if (diff & (0xF << 56)) != 0:
-						mask |= SnapshotCodec.FLAG_ACTION
-						bits += 4
-						res = (res & ~(0xF << 56)) | (nwd & (0xF << 56))
-					if wprog[i] != bprog[j] and SnapshotCodec.action_uses_progress((nwd >> 56) & 0xF):
-						mask |= SnapshotCodec.FLAG_PROGRESS
-						bits += 8
-					if mask != 0:
-						var age: int = mini(now - bfresh[j], _AGE_CAP)
-						if wcombat[i] != 0:
-							max_age = maxi(max_age, age)
-							age *= 2
-						rk[nr] = _K_UPDATE
-						rwi[nr] = i
-						rbi[nr] = j
-						rmask[nr] = mask
-						rword[nr] = res
-						rbits[nr] = bits
-						rprio[nr] = age
-						nr += 1
-			i += 1
+			rk[nr] = _K_REMOVED
+			rbi[nr] = j
+			rbits[nr] = DIED
+			nr += 1
 			j += 1
 	last_max_combat_age = max_age
 	return nr
@@ -260,7 +226,7 @@ func _select(nr: int) -> void:
 			others += 1
 	if others == 0:
 		return
-	if _sort_keys.size() < others:
+	if _sort_keys.size() != others:
 		_sort_keys.resize(others)
 	var keys := _sort_keys
 	var rprio := _r_prio
@@ -273,12 +239,10 @@ func _select(nr: int) -> void:
 				slot -= others
 			keys[m] = ((_PRIO_APPEAR - rprio[k]) << 40) | (slot << 20) | k
 			m += 1
-	# Solo se ordena lo usado (el resto del array reutilizado queda con valores viejos al final).
-	var used := keys.slice(0, others)
-	used.sort()
+	keys.sort()
 	var rbits := _r_bits
 	var taken: int = 0
-	for key: int in used:
+	for key: int in keys:
 		if budget < 24:
 			break
 		var k: int = key & 0xFFFFF
@@ -290,57 +254,85 @@ func _select(nr: int) -> void:
 	_rot += taken
 
 
-## Escribe los paquetes. Aplica los topes exactos (1200 B por paquete, 4096 B en total): lo que no
-## entra se desmarca y queda aplazado.
+## Escribe los paquetes con un acumulador de bits local (el formato es el de SnapshotCodec; aquí
+## va en línea porque es el bucle más caliente del servidor). Calcula los campos exactos de lo que
+## entra y aplica los topes exactos (1200 B por paquete, 4096 B en total): lo que no entra se
+## desmarca y queda aplazado.
 func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_seq: int) -> Array[PackedByteArray]:
 	var packets: Array[PackedByteArray] = []
 	var rk := _r_kind
 	var rwi := _r_wi
 	var rbi := _r_bi
-	var rmask := _r_mask
-	var rword := _r_word
 	var rbits := _r_bits
+	var rword := _r_word
 	var chosen := _r_chosen
 	var wid := world.ids
+	var ww := world.words
 	var wprog := world.prog
 	var wdef := world.def_index
 	var wown := world.owner
 	var bid := base.ids
 	var bw := base.words
-	var header_base: int = base_tick if base_tick >= 0 else SnapshotCodec.NO_BASE
+	var bprog := base.prog
+	var hw := BitWriter.new()
+	SnapshotCodec.write_header(hw, now, base_tick if base_tick >= 0 else SnapshotCodec.NO_BASE, 0, last_seq)
+	var header: PackedByteArray = hw.get_bytes()
+	const QM: int = SnapshotCodec.Q_MASK
+	const POSM: int = SnapshotCodec.POS_MASK
+	const LIM: int = SnapshotCodec.DELTA_LIMIT
+	const MAXB: int = SnapshotCodec.MAX_PACKET_BYTES * 8
+	const CAP: int = SnapshotCodec.MAX_SNAPSHOT_BYTES
+	const F_DELTA: int = SnapshotCodec.FLAG_POS_DELTA
+	const F_ABS: int = SnapshotCodec.FLAG_POS_ABS
+	const F_HEAD: int = SnapshotCodec.FLAG_HEADING
+	const F_HP: int = SnapshotCodec.FLAG_HP
+	const F_ACT: int = SnapshotCodec.FLAG_ACTION
+	const F_PROG: int = SnapshotCodec.FLAG_PROGRESS
+	const F_APPEAR: int = SnapshotCodec.FLAG_APPEAR
+
+	var buf: PackedByteArray = header.duplicate()
+	var acc: int = 0
+	var nacc: int = 0
 	var total: int = 0
-	var part: int = 0
-	var w := BitWriter.new()
-	SnapshotCodec.write_header(w, now, header_base, part, last_seq)
 	var n_rem: int = 0
 	var n_rec: int = 0
 	var prev: int = 0
-	var records: int = 0
 	var removed: int = 0
+	var records: int = 0
 	var deferred: int = 0
 	var cut: int = 0
 
-	# 1) REMOVED.
+	# 1) REMOVED (motivo en rbits).
 	for k: int in nr:
 		if rk[k] != _K_REMOVED or chosen[k] == 0:
 			continue
 		var id: int = bid[rbi[k]]
-		var bits: int = BitWriter.varint_bits(id - prev) + 1
-		if w.bit_length() + bits > _MAX_PACKET_BITS:
-			total += _close_packet(w, n_rem, n_rec, packets)
-			part += 1
-			w = BitWriter.new()
-			SnapshotCodec.write_header(w, now, header_base, part, last_seq)
+		var d: int = id - prev
+		var bits: int = (8 if d < 0x80 else (16 if d < 0x4000 else 32)) + 1
+		if buf.size() * 8 + nacc + bits > MAXB:
+			total += _flush_packet(buf, acc, nacc, n_rem, n_rec, packets)
+			buf = header.duplicate()
+			acc = 0
+			nacc = 0
 			n_rem = 0
 			n_rec = 0
-			prev = 0
-			bits = BitWriter.varint_bits(id) + 1
-		if total + ((w.bit_length() + bits + 7) >> 3) > SnapshotCodec.MAX_SNAPSHOT_BYTES:
+			d = id
+			bits = (8 if d < 0x80 else (16 if d < 0x4000 else 32)) + 1
+		if total + ((buf.size() * 8 + nacc + bits + 7) >> 3) > CAP:
 			chosen[k] = 0
 			deferred += 1
+			cut += 1
 			continue
-		w.write_varint(id - prev)
-		w.write_bits(rmask[k], 1)
+		while d >= 0x80:
+			acc |= ((d & 0x7F) | 0x80) << nacc
+			nacc += 8
+			d >>= 7
+		acc |= ((d | (rbits[k] << 8)) & 0x1FF) << nacc
+		nacc += 9
+		while nacc >= 8:
+			buf.append(acc & 0xFF)
+			acc >>= 8
+			nacc -= 8
 		prev = id
 		n_rem += 1
 		removed += 1
@@ -354,41 +346,149 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 			deferred += 1
 			continue
 		var wi: int = rwi[k]
+		var nwd: int = ww[wi]
 		var id: int = wid[wi]
-		var bits: int = BitWriter.varint_bits(id - prev) + rbits[k]
-		if w.bit_length() + bits > _MAX_PACKET_BITS:
-			total += _close_packet(w, n_rem, n_rec, packets)
-			part += 1
-			w = BitWriter.new()
-			SnapshotCodec.write_header(w, now, header_base, part, last_seq)
+		# Campos exactos: máscara, palabra resultante y carga en dos grupos de bits.
+		var mask: int
+		var res: int
+		var g1: int  # máscara [+ delta]
+		var g1b: int
+		var g2: int  # rumbo, vida, acción, progreso (o el resto de la aparición)
+		var g2b: int
+		var abs_pos: bool
+		if rk[k] == _K_APPEAR:
+			res = nwd
+			mask = F_APPEAR
+			g1 = F_APPEAR | (wdef[wi] << 8) | (wown[wi] << 18)
+			g1b = 22
+			abs_pos = true
+			var action: int = (nwd >> 56) & 0xF
+			g2 = ((nwd >> 40) & 0xFF) | (((nwd >> 48) & 0xFF) << 8) | (action << 16)
+			g2b = 20
+			if SnapshotCodec.action_uses_progress(action):
+				g2 |= wprog[wi] << 20
+				g2b = 28
+		else:
+			var bi: int = rbi[k]
+			var owd: int = bw[bi]
+			var diff: int = nwd ^ owd
+			mask = 0
+			res = owd
+			g1 = 0
+			g1b = 8
+			abs_pos = false
+			if (diff & POSM) != 0:
+				var oqx: int = owd & QM
+				var oqz: int = (owd >> 20) & QM
+				var dx: int = (nwd & QM) - oqx
+				var dz: int = ((nwd >> 20) & QM) - oqz
+				# Pasos de 0,25 m, redondeando alejándose de cero en los medios.
+				var ddx: int = (dx + (1 if dx > 0 else (-1 if dx < 0 else 0))) / 2
+				var ddz: int = (dz + (1 if dz > 0 else (-1 if dz < 0 else 0))) / 2
+				if ddx >= -LIM and ddx <= LIM and ddz >= -LIM and ddz <= LIM:
+					if ddx != 0 or ddz != 0:
+						mask = F_DELTA
+						g1 = ((ddx & 0xFF) << 8) | ((ddz & 0xFF) << 16)
+						g1b = 24
+						res = (res & ~POSM) | clampi(oqx + ddx * 2, 0, QM) | (clampi(oqz + ddz * 2, 0, QM) << 20)
+				else:
+					mask = F_ABS
+					abs_pos = true
+					res = (res & ~POSM) | (nwd & POSM)
+			g2 = 0
+			g2b = 0
+			if (diff & (0xFF << 40)) != 0:
+				mask |= F_HEAD
+				g2 = (nwd >> 40) & 0xFF
+				g2b = 8
+			if (diff & (0xFF << 48)) != 0:
+				mask |= F_HP
+				g2 |= ((nwd >> 48) & 0xFF) << g2b
+				g2b += 8
+			if (diff & (0xF << 56)) != 0:
+				mask |= F_ACT
+				g2 |= ((nwd >> 56) & 0xF) << g2b
+				g2b += 4
+			if wprog[wi] != bprog[bi] and SnapshotCodec.action_uses_progress((nwd >> 56) & 0xF):
+				mask |= F_PROG
+				g2 |= wprog[wi] << g2b
+				g2b += 8
+			res = (res & ~((0xFF << 40) | (0xFF << 48) | (0xF << 56))) | (nwd & ((0xFF << 40) | (0xFF << 48) | (0xF << 56)))
+			if mask == 0:
+				# Movimiento menor que el paso del delta: el cliente ya está al día.
+				rword[k] = owd
+				continue
+			g1 |= mask
+		rword[k] = res
+		var d: int = id - prev
+		var bits: int = (8 if d < 0x80 else (16 if d < 0x4000 else 32)) + g1b + g2b + (40 if abs_pos else 0)
+		if buf.size() * 8 + nacc + bits > MAXB:
+			total += _flush_packet(buf, acc, nacc, n_rem, n_rec, packets)
+			buf = header.duplicate()
+			acc = 0
+			nacc = 0
 			n_rem = 0
 			n_rec = 0
-			prev = 0
-			bits = BitWriter.varint_bits(id) + rbits[k]
-		if total + ((w.bit_length() + bits + 7) >> 3) > SnapshotCodec.MAX_SNAPSHOT_BYTES:
+			d = id
+			bits = (8 if d < 0x80 else (16 if d < 0x4000 else 32)) + g1b + g2b + (40 if abs_pos else 0)
+		if total + ((buf.size() * 8 + nacc + bits + 7) >> 3) > CAP:
 			chosen[k] = 0
 			deferred += 1
 			cut += 1
 			continue
-		w.write_varint(id - prev)
-		if rk[k] == _K_APPEAR:
-			SnapshotCodec.write_appear(w, rword[k], wprog[wi], wdef[wi], wown[wi])
-		else:
-			SnapshotCodec.write_update(w, rmask[k], rword[k], bw[rbi[k]], wprog[wi])
+		# id (varint)
+		while d >= 0x80:
+			acc |= ((d & 0x7F) | 0x80) << nacc
+			nacc += 8
+			d >>= 7
+		acc |= d << nacc
+		nacc += 8
+		if nacc >= 32:
+			while nacc >= 8:
+				buf.append(acc & 0xFF)
+				acc >>= 8
+				nacc -= 8
+		# máscara [+ delta] (como mucho 24 bits; aquí nacc < 32)
+		acc |= g1 << nacc
+		nacc += g1b
+		while nacc >= 8:
+			buf.append(acc & 0xFF)
+			acc >>= 8
+			nacc -= 8
+		if abs_pos:
+			acc |= (nwd & QM) << nacc
+			nacc += 20
+			acc |= ((nwd >> 20) & QM) << nacc
+			nacc += 20
+			while nacc >= 8:
+				buf.append(acc & 0xFF)
+				acc >>= 8
+				nacc -= 8
+		if g2b > 0:
+			acc |= g2 << nacc
+			nacc += g2b
+			while nacc >= 8:
+				buf.append(acc & 0xFF)
+				acc >>= 8
+				nacc -= 8
 		prev = id
 		n_rec += 1
 		records += 1
-	total += _close_packet(w, n_rem, n_rec, packets)
+	total += _flush_packet(buf, acc, nacc, n_rem, n_rec, packets)
 
-	# Número de partes (byte alineado de la cabecera).
+	# Número de partes e índice de cada una (bytes alineados de la cabecera).
 	var pc_byte: int = SnapshotCodec.PART_COUNT_BIT >> 3
-	for p: PackedByteArray in packets:
-		p[pc_byte] = packets.size()
+	for pi: int in packets.size():
+		packets[pi][pc_byte - 1] = pi
+		packets[pi][pc_byte] = packets.size()
 	if cut > 0:
 		_slack_bytes = mini(_slack_bytes + 32 + cut * 8, _SLACK_MAX)
 	else:
 		_slack_bytes = maxi(_slack_bytes - 2, _SLACK_MIN)
 	last_cap_cuts = cut
+	last_max_packet_bytes = 0
+	for p: PackedByteArray in packets:
+		last_max_packet_bytes = maxi(last_max_packet_bytes, p.size())
 	last_bytes = total
 	last_packets = packets.size()
 	last_records = records
@@ -398,12 +498,22 @@ func _encode(world: SnapshotWorld, base: SnapshotState, nr: int, now: int, last_
 	return packets
 
 
-func _close_packet(w: BitWriter, n_rem: int, n_rec: int, packets: Array[PackedByteArray]) -> int:
-	w.patch_bits(SnapshotCodec.REMOVED_COUNT_BIT, n_rem, 16)
-	w.patch_bits(SnapshotCodec.RECORD_COUNT_BIT, n_rec, 16)
-	var bytes := w.get_bytes()
-	packets.append(bytes)
-	return bytes.size()
+## Cierra un paquete: vuelca los bits pendientes y escribe los contadores en la cabecera.
+func _flush_packet(buf: PackedByteArray, acc: int, nacc: int, n_rem: int, n_rec: int, packets: Array[PackedByteArray]) -> int:
+	var a: int = acc
+	var n: int = nacc
+	while n > 0:
+		buf.append(a & 0xFF)
+		a >>= 8
+		n -= 8
+	var rb: int = SnapshotCodec.REMOVED_COUNT_BIT >> 3
+	var cb: int = SnapshotCodec.RECORD_COUNT_BIT >> 3
+	buf[rb] = n_rem & 0xFF
+	buf[rb + 1] = (n_rem >> 8) & 0xFF
+	buf[cb] = n_rec & 0xFF
+	buf[cb + 1] = (n_rec >> 8) & 0xFF
+	packets.append(buf)
+	return buf.size()
 
 
 ## Guarda en el anillo el estado que tendrá el cliente al recibir completo este snapshot.
