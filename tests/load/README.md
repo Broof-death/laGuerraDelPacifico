@@ -151,6 +151,27 @@ es movimiento + evitación local medidos juntos por tick. Las rutas tienen un pr
   se atraviesan (provisional hasta el combate). Ver `sim/systems/avoidance_system.gd`.
 - Antigüedad máxima de 400 ms en combate: igual que en develop (pendiente de T-020).
 
+### T-018, ronda de optimización (18-10-2026)
+
+Mismas condiciones. Antes = la tabla de arriba. Cambios: histéresis de rumbo y velocidad en los
+snapshots, atajo para quietas, estado guardado con copia nativa, interés en rejilla de enteros,
+evitación a 10 Hz en los ticks sin captura (quietas entre sí cada 0,2 s, en movimiento cada 0,4 s).
+
+| Escenario | tick p50 / p95 / p99 / máx | mov+evit p95 | rutas p99 | snapshots p50 / p95 | KB/s | antigüedad máx. |
+|---|---|---|---|---|---|---|
+| S1 | 3,03 / 4,59 / 5,07 / 5,83 | 2,07 | 0,14 | 1,16 / 1,79 | 1,5 | 300 ms |
+| S2 | 13,26 / **15,54** / 16,50 / 23,19 | 5,98 | 0,31 | 8,58 / 10,91 | 6,3 | 400 ms |
+| S2 + `--path_stress=1` | 13,94 / 16,42 / 17,96 / 20,57 | 5,68 | 3,13 | 8,70 / 11,30 | 5,5 | 400 ms |
+| S2 + `--long_routes=8` | 13,76 / 16,04 / 16,65 / 19,23 | 6,04 | 0,91 | 8,57 / 11,04 | 6,1 | 400 ms |
+
+- Lo que queda: el armado de snapshots es ~8,6 ms de cada tick (60 %). Por cliente, la mezcla
+  contra la base recorre las 3000 entidades (~2,4 ms, 0,8 µs por entidad, ya en el piso de
+  GDScript), 3 clientes por tick, más la captura del mundo (~2,4 ms cada 2 ticks). Movimiento ~2,1
+  y evitación ~1,3 ms de p50. La meta de p95 <= 14 ms no se alcanza en GDScript sin cambiar el
+  diseño de ADR-006 (frecuencia o interés de los snapshots).
+- Candidatos para GDExtension (ADR propio): SnapshotSender._merge y SnapshotWorld.capture
+  (~8 ms por tick hoy; en C++ < 0,5 ms) y luego movimiento y evitación (~3,5 ms; < 0,3 ms).
+
 # Prueba de carga del render del cliente (T-017, ADR-006 punto 7, ADR-010 punto 5)
 
 Necesita ventana (no `--headless`). Apaga la sincronización vertical y abre la ventana a 1920x1080.
