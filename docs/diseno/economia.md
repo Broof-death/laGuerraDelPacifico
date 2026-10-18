@@ -1,9 +1,9 @@
 # Economía v1: recursos y edificios
 
-> Tarea: **T-022** (P-004). Agente: game-designer. Estado: propuesta para revisión, con bloqueos abiertos para Feño (§14).
+> Tarea: **T-022** (P-004). Agente: game-designer. Estado: en revisión. Feño respondió Q-019 a Q-024 (§14); queda abierta Q-025 para Luis (forma de los datos).
 > Fuentes: `docs/historia/recursos-1879.md` (T-035, sobre todo §10 y §11), `docs/historia/geografia-1879.md` (§6–§8), `docs/diseno/unidades.md` (T-016).
 > Decisiones que respeta: **ADR-006** (6 jugadores × ~500 unidades, ~300 edificios en total, tick de 20 Hz), **ADR-007** (ResourceDef, BuildingDef, `drop_off`, `pop_provided`, `trains`), **ADR-009** (geografía a 1:20, edificios en metros reales, velocidades de diseño), **ADR-014** (caja del mapa), **ADR-016** (carbón por mar, sin minas en el mapa), **ADR-017** (oficina de paradas y Shanks, tiempos comprimidos, yacimientos según su estado en 1879), **ADR-018/019** (interfaz de cartografía de 1879, colores de facción).
-> Convención de marcas: **[J]** valor de juego propuesto aquí; **[Q-xxx]** depende de una pregunta abierta (§14); **[A]** necesita forma de datos que decide el arquitecto (§12.3).
+> Convención de marcas: **[J]** valor de juego propuesto aquí; **[Q-xxx]** decidido por Feño en esa pregunta (§14); **[A]** necesita forma de datos que decide el arquitecto (§12.3).
 
 ## 1. Objetivo para el jugador
 
@@ -46,13 +46,13 @@ Las cargas **no** se guardan en el tesoro del jugador: existen en la **bodega** 
 
 ## 3. Reglas generales
 
-### 3.1 Operarios y puestos de trabajo [Q-020]
+### 3.1 Operarios y puestos de trabajo (Q-020, respondida)
 
 - Los extractores tienen **puestos** (`worker_slots`). El jugador envía operarios al edificio; cada operario que entra ocupa un puesto y **deja de ser una entidad visible** (como las tropas embarcadas en un transporte, unidades.md §5.7), pero **sigue contando su pop**.
 - La producción es proporcional a los puestos ocupados: `producción/min = puestos_ocupados × tasa_por_operario × rendimiento_del_yacimiento × RITMO`.
 - El jugador puede sacar operarios (orden «Desalojar»: salen por la puerta, de a 1 por segundo).
 - Si el edificio se destruye, los operarios salen con vida por la puerta, a razón de todos en 1 s.
-- `RITMO` es una constante global de la partida (1,0 en «medio»; ver §9.4 y Q-019).
+- `RITMO` es una constante global de la partida (1,0, ritmo «medio», elegido por Feño en Q-019; ver §9.4).
 
 ### 3.2 Construir
 
@@ -79,7 +79,7 @@ Las haciendas y chacras **solo producen** si están a ≤ 1500 m de un centro o 
 | Operario dentro de un edificio | Sí (1) | Dentro de los 500 de pop | No es entidad visible: ahorra entidades |
 | Carreta, tren | Sí (1 y 2) | Dentro de los 500 de pop | Garantiza que un jugador nunca pase de 500 entidades móviles |
 | Vapor carbonero | No | 1 en tránsito por carbonera, 2 carboneras por jugador → ≤ 2 | Lo genera el contrato, no el jugador |
-| Recua de la remesa del altiplano (solo si se acepta en Q-023) | No | 1 en tránsito | Igual |
+| Recua de la remesa del altiplano (Bolivia, Q-023) | No | 1 en tránsito | Igual |
 | Lanchas del muelle | — | — | **Solo cosméticas en el cliente**, no son entidades de la simulación |
 | Edificios | — | 50 por jugador | ADR-006: ~300 en total |
 
@@ -89,7 +89,7 @@ Peor caso: 6 × (500 + 3) + 300 = **3318 entidades**, por debajo del margen medi
 
 ### 4.1 Tabla de edificios v1
 
-Medidas de huella en celdas de **16 m** (TERRAIN_CELL de ADR-009; a confirmar por el arquitecto, Q-025). Vida y armadura usan las reglas de combate de unidades.md §5 (daño = max(0, daño − armadura)); todos los edificios son objetivo LAND.
+Medidas de huella en celdas de **16 m** (TERRAIN_CELL de ADR-009; a confirmar por el arquitecto en Q-025, abierta). Vida y armadura usan las reglas de combate de unidades.md §5 (daño = max(0, daño − armadura)); todos los edificios son objetivo LAND.
 
 | id | Nombre visible | Colocación | Costo (V / P) | build_time (s) | max_hp | armor | Huella (celdas) | Puestos | Hace | Tope por jugador |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -118,9 +118,9 @@ Notas:
 - **Astillero por facción:** Chile entrena transporte, torpedera, corbeta y blindado de batería; Perú, transporte, torpedera, corbeta y monitor de torre (FactionDef y `trains`). Bolivia no tiene astillero sino la agencia de fletes (solo transporte).
 - **Bolivia sin puerto propio:** puede embarcar sus cargas y comprar carbón en muelles y carboneras **aliados** (§5.2 y §6.4).
 
-### 4.2 Mejora de la oficina de paradas a Shanks [Q-022]
+### 4.2 Mejora de la oficina de paradas a Shanks (Q-022, respondida)
 
-Propuesta recomendada (pendiente de Feño): la oficina de paradas se puede **mejorar** a Shanks por **450 P y 120 s**. Durante la mejora sigue produciendo como oficina de paradas; al terminar pasa a 8 puestos y empieza a consumir carbón. Si se responde que no, la Shanks solo se construye nueva en un sitio libre.
+Decidido por Feño en Q-022: la oficina de paradas se puede **mejorar** a Shanks por **450 P y 120 s**. Durante la mejora sigue produciendo como oficina de paradas; al terminar pasa a 8 puestos y empieza a consumir carbón. La Shanks también se puede construir nueva en un sitio libre.
 
 ### 4.3 Fuerte: artillería de costa
 
@@ -218,19 +218,19 @@ La última fila muestra el problema de Bolivia (§10).
 - **Licencia (compresión, cubierta por L2 de ADR-017):** el vapor no recorre los ~1000 km de Lota a Antofagasta; aparece a 4000 m de juego (~80 km reales) de la carbonera, en la dirección de su origen, y llega en 160 s a marcha. Así Chile conserva su ventaja histórica (precio) sin esperar 40 minutos por viaje.
 - Si no hay pesos para el viaje, el contrato espera (aviso «sin fondos para el carbón»).
 
-### 6.2 Vapor carbonero [Q-021]
+### 6.2 Vapor carbonero (Q-021, respondida)
 
 | id | max_hp | armor | speed táctica / marcha | radius | vision_range | Armas | pop |
 |---|---|---|---|---|---|---|---|
 | `vapor_carbonero` | 400 | 1 | 10 / 25 | 10 | 120 | ninguna | 0 (no lo controla el jugador) |
 
-Propuesta recomendada (pendiente de Feño, Q-021): el vapor es una entidad visible y **se puede hundir**. Si se hunde se pierden el carbón y el pago, y el siguiente sale 180 s después. Un buque enemigo armado a ≤ 400 m de la entrada o de la carbonera detiene la salida (§7). Así la guerra de corso tiene un blanco, como la captura del *Rímac* por el *Huáscar* en julio de 1879.
+Decidido por Feño en Q-021: el vapor es una entidad visible, sin armas, y **se puede hundir**. Si se hunde se pierden el carbón y el pago, y el siguiente sale 180 s después. Un buque enemigo armado a ≤ 400 m de la entrada o de la carbonera detiene la salida (§7). Así la guerra de corso tiene un blanco, como la captura del *Rímac* por el *Huáscar* en julio de 1879.
 
-### 6.3 Quién consume carbón [Q-024]
+### 6.3 Quién consume carbón (Q-024, respondida)
 
 - **Buques:** el costo C de unidades.md §4.2 (transporte 50, torpedera 55, corbeta 100, blindado 250, monitor 220). Los buques no consumen carbón al navegar en v1.
 - **Oficina Shanks:** 10 C/min mientras trabaja (ADR-017). **Sin carbón se detiene** (aviso «sin carbón»); vuelve a trabajar en cuanto hay.
-- Propuesta recomendada (pendiente, Q-024): **nada más en v1**. El tren y las condensadoras quedan sin consumo.
+- Decidido por Feño en Q-024: **nada más en v1**. El tren y las condensadoras no consumen carbón; las condensadoras llegan con el agua en v2 (§16).
 - Corresponde corregir en unidades.md §4 la frase «C = carbón (solo buques)» por «entre las unidades, solo los buques cuestan carbón; la oficina Shanks también lo consume» (comentado en T-016; este documento no edita unidades.md).
 
 ### 6.4 Lectura de balance del carbón
@@ -275,7 +275,7 @@ Se evalúa a 1 Hz para cada muelle, covadera y carbonera, en un radio de **400 m
 | Destruir el almacén | Combate normal | Las haciendas que dependían de él se detienen («sin acopio») |
 | Bloquear un puerto | §7.1 | Ingreso por exportación a 0 o a la mitad |
 | Bombardear muelles y covaderas | §7.2 | Igual que en Huanillos y Pabellón de Pica |
-| Interceptar el carbón | §6.2 [Q-021] | Sin carbón no hay escuadra ni Shanks |
+| Interceptar el carbón | §6.2 (Q-021) | Sin carbón no hay escuadra ni Shanks |
 | Ocupar yacimientos | Destruir el extractor enemigo y construir encima tras la ruina (60 s) | El salitre cambia de manos, como Tarapacá en noviembre de 1879 |
 
 Los operarios dentro de un edificio no combaten ni pueden ser atacados; salen vivos si el edificio cae (§3.1).
@@ -313,7 +313,7 @@ Tiempo para recuperar la inversión desde que el edificio está lleno (inversió
 | Shanks (Perú) + 2 estaciones y 1 tren (650) | 1650 | 220 | **7,5 min** |
 | Shanks (Chile) + estaciones y tren | 1650 | 235 | 7,0 min |
 | Segunda Shanks en la misma vía (+1 tren, 250) | 1250 | 220 | 5,7 min |
-| Mejora paradas → Shanks (si se acepta Q-022): 450 P + 2 operarios | 550 | +130 (Perú) | 4,2 min |
+| Mejora paradas → Shanks (Q-022): 450 P + 2 operarios | 550 | +130 (Perú) | 4,2 min |
 | Covadera + 5 operarios | 150 + 250 = 400 | 90 | 4,4 min |
 | Covadera en Chincha | 400 | 9 | 44 min (no compensa: ADR-017) |
 | Mina de plata en Caracoles + 6 operarios + 5 carretas (10 km) | 300 + 300 + 400 = 1000 | 90 | 11,1 min (en declive: ADR-017) |
@@ -331,14 +331,14 @@ Tiempo para recuperar la inversión desde que el edificio está lleno (inversió
 
 La Shanks rinde **2,2 veces** más por pop que la paradas si tiene tren. Con un tope de 500 de pop eso es lo que decide, no el costo en pesos. Bloquear la carbonera de un rival con Shanks le quita el 100 % de esa producción en ~1 minuto (cuando se acaba su reserva de carbón).
 
-### 9.4 Ritmo de la partida (simulación) [Q-019]
+### 9.4 Ritmo de la partida (simulación; Q-019, respondida)
 
 Script reproducible: `docs/diseno/balance/sim_economia.mjs` (`node sim_economia.mjs RITMO PRECIO_CARBON`). Un jugador sin pérdidas desarrolla su economía en este orden: hacienda, paradas, muelle, hacienda, cuartel, hacienda, paradas, carbonera, Shanks con tren, hacienda, segundo centro, covadera, ... hasta 110 operarios y 10 de pop en porteadores, y gasta el resto en infantería de línea. Poblaciones cuando le faltan ≤ 8 de pop. Es una partida de «desarrollo» sin ataques: el peor caso para tener ejército pronto.
 
 | RITMO | Plan económico completo (min) | 30 militares | 100 | 200 | 300 | 380 (pop 500) | Ingreso a los 40 min (V + P acumulados) |
 |---|---|---|---|---|---|---|---|
 | 0,75 (lento) | 25,3 | 26,4 | 33,5 | 41,0 | 49,1 | **55,5** | 17 058 V + 16 396 P |
-| **1,0 (medio, propuesta)** | 21,7 | 22,3 | 27,7 | 33,2 | 39,3 | **44,1** | 24 674 V + 22 760 P |
+| **1,0 (medio, elegido en Q-019)** | 21,7 | 22,3 | 27,7 | 33,2 | 39,3 | **44,1** | 24 674 V + 22 760 P |
 | 1,4 (rápido) | 17,1 | 18,6 | 22,9 | 28,1 | 32,8 | **36,4** | 38 137 V + 32 736 P |
 
 Con el carbón a 0,5 P (Chile) la curva es casi igual (pop 500 en 44,1 min): la ventaja chilena del carbón está en la escuadra, no en el salitre.
@@ -353,18 +353,18 @@ Con el carbón a 0,5 P (Chile) la curva es casi igual (pop 500 en 44,1 min): la 
 | Un cuartel sin parar (infantería) | 164 V/min + 82 P/min | 6 cuarteles saturan 1000 V/min |
 | 9 poblaciones (de 50 a 500 de pop) | 450 V / 900 P | ~1 min |
 
-Lectura: en «medio», un ejército de 100 a los ~28 min y el tope de pop a los ~44 min en desarrollo puro. Un jugador que ataque antes (1 cuartel desde el minuto 4) puede tener ~15–20 soldados hacia el minuto 10 (estimación: 1 cuartel produce 1 cada 22 s si tiene ~160 V/min). Encaja con los tiempos de desplazamiento de unidades.md §2.1 (5–20 min en marcha dentro de una región): la primera ofensiva llega hacia el minuto 15–20 y las partidas duran **60–90 min**. Feño decide el ritmo en Q-019.
+Lectura: en «medio», un ejército de 100 a los ~28 min y el tope de pop a los ~44 min en desarrollo puro. Un jugador que ataque antes (1 cuartel desde el minuto 4) puede tener ~15–20 soldados hacia el minuto 10 (estimación: 1 cuartel produce 1 cada 22 s si tiene ~160 V/min). Encaja con los tiempos de desplazamiento de unidades.md §2.1 (5–20 min en marcha dentro de una región): la primera ofensiva llega hacia el minuto 15–20 y las partidas duran **60–90 min**. Feño eligió el ritmo medio (RITMO = 1,0) en Q-019.
 
 ### 9.5 Tope de población
 
 - Se mantiene **500 de pop por jugador** (unidades.md §5.8 y ADR-006). Los operarios y porteadores ocupan ~120 (24 %); quedan ~380 para el ejército y la escuadra.
 - La población la dan los centros (50 cada uno, máximo 3) y las poblaciones (50 cada una, máximo 9): con 1 centro y 9 poblaciones se llega exactamente a 500.
 
-## 10. Bolivia [Q-023]
+## 10. Bolivia (Q-023, respondida)
 
 **El problema (recursos-1879 §10.4):** si Bolivia pierde el litoral (Antofagasta, Mejillones, Tocopilla, Cobija, Caracoles), dentro de la caja del mapa solo le quedan Corocoro (cobre) y los oasis del altiplano y de Atacama. Su plata (Huanchaca, Potosí) y sus valles (Cochabamba, Chuquisaca) están fuera del mapa (ADR-014). Y Corocoro queda a ~22 km de juego de Arica: una carreta tarda 92 min en ir y volver (§5.5), así que su cobre casi no rinde.
 
-Si la partida empieza antes del 14 de febrero de 1879 (posiciones iniciales aún sin decidir), Bolivia sí tiene el litoral al comienzo y el problema aparece cuando lo pierde. Propuesta recomendada en Q-023 (opción A), con estas cifras:
+Si la partida empieza antes del 14 de febrero de 1879 (posiciones iniciales aún sin decidir), Bolivia sí tiene el litoral al comienzo y el problema aparece cuando lo pierde. Feño eligió en Q-023 la remesa del altiplano, con estas cifras:
 
 - **Remesa del altiplano:** cada 120 s entra por el borde este del mapa (camino de La Paz a Tacna, por el paso de Tacora o Charaña) una **recua** (entidad sin armas, 300 de vida, 6 m/s, pop 0, máximo 1 en tránsito) con **300 P y 200 V** hacia el centro o almacén boliviano más cercano: **150 P/min y 100 V/min**, equivalente a 1,5 oficinas de paradas y una hacienda llenas, sin operarios. Se puede atacar (se pierde lo que lleva) y llega más tarde cuanto más lejos esté el centro boliviano del borde este.
 - Bolivia embarca en muelles aliados (§5.3) y compra carbón en carboneras aliadas (§6.1).
@@ -375,7 +375,7 @@ Interfaz de cartografía de 1879 (ADR-018): papel crema, tinta sepia, tipografí
 
 - **Barra superior:** Víveres, Pesos y Carbón con su cantidad y su **saldo por minuto** (+/−, en verde oliva o rojo óxido), y `Pop 123/500`. Al pasar el ratón, el desglose: «Exportación 660 · Base 60 · Importación de víveres −180 · Carbón −100».
 - **Avisos** (cartela con sonido, una vez por causa y cada 30 s como mucho): «Iquique bloqueado», «Muelle de Pisagua destruido», «Vía cortada en La Noria», «Oficina Shanks sin carbón», «Vapor carbonero hundido», «Bodega llena», «Sin acopio».
-- **Panel de un extractor:** puestos ocupados como figuras (●●●○○), producción por minuto actual y máxima, rendimiento del yacimiento («Caracoles: en declive, ×0,5»), barra de la bodega, porteadores asignados y botones **Agregar operario**, **Desalojar**, **Entrenar carreta** y, en paradas, **Mejorar a Shanks** (si se acepta Q-022).
+- **Panel de un extractor:** puestos ocupados como figuras (●●●○○), producción por minuto actual y máxima, rendimiento del yacimiento («Caracoles: en declive, ×0,5»), barra de la bodega, porteadores asignados y botones **Agregar operario**, **Desalojar**, **Entrenar carreta** y, en paradas, **Mejorar a Shanks** (Q-022).
 - **Panel del muelle:** bodega, exportación por minuto, interruptor **Importar víveres**, estado (Libre / Disputado / Bloqueado) con un icono de ancla, tachada si está bloqueado.
 - **Mapa y minimapa:** yacimientos con símbolos de época (rombo de salitre, punto de guano, cruz de mina, espiga de valle); vías férreas como línea de tren de los mapas de 1879, con una marca roja donde están cortadas; rutas de los porteadores como línea punteada de tinta al seleccionar un extractor; círculo del radio de bloqueo (400 m) y de la zona de influencia al colocar un edificio.
 - **En el mundo 3D** (provisional según ADR-005, final según recursos-1879 §11): humo bajo en la paradas, chimenea con humo negro en la Shanks (sin humo si está parada), carretas y trenes moviéndose, lanchas cosméticas entre muelle y mercantes fondeados, pila de carbón que crece en la carbonera. Las figuras de operarios trabajando son animación del edificio, no entidades.
@@ -446,7 +446,7 @@ Campos existentes de ADR-007: `cost`, `build_time`, `max_hp`, `armor`, `vision_r
 
 Todos los tiempos son múltiplos de 0,05 s (ADR-006). El astillero se divide en dos `.tres` por facción porque `trains` cambia; también podría ser uno común si FactionDef filtra `trains` por `FactionDef.units` (lo decide el arquitecto).
 
-### 12.3 Campos nuevos que hacen falta (forma: arquitecto, Q-025)
+### 12.3 Campos nuevos que hacen falta (forma: arquitecto, Q-025, abierta)
 
 | Campo propuesto | Dónde | Tipo | Valores de este documento |
 |---|---|---|---|
@@ -460,7 +460,7 @@ Todos los tiempos son múltiplos de 0,05 s (ADR-006). El astillero se divide en 
 | `export_rate` | BuildingDef | float (P/min) | Muelle 500; covadera 100 |
 | `influence_radius` | BuildingDef | float (m) | Centro 3000; almacén y fuerte 1000 |
 | `max_per_player` | BuildingDef | int (0 = sin tope) | §4.1 |
-| `upgrades_to`, `upgrade_cost`, `upgrade_time` | BuildingDef | BuildingDef, Dictionary, float | Paradas → Shanks (si Q-022) |
+| `upgrades_to`, `upgrade_cost`, `upgrade_time` | BuildingDef | BuildingDef, Dictionary, float | Paradas → Shanks: 450 P, 120 s (Q-022) |
 | `base_income` | BuildingDef | Dictionary[ResourceDef, float] (por min) | Centro: pesos 60 |
 | `carry_capacity`, `rail_only` | UnitDef | int, bool | Carreta 200 / false; tren 1000 / true |
 | `coal_price`, `coal_entry_dir` | FactionDef | float, enum {SUR, OESTE} | §6.1 |
@@ -520,19 +520,19 @@ Todos los tiempos son múltiplos de 0,05 s (ADR-006). El astillero se divide en 
 - **Covadera bloqueada:** su guano se acumula en la bodega (600) y luego se detiene.
 - **Precisión:** la producción se acumula en float cada tick (por ejemplo, 20 V/min = 0,0167 V por tick) y se acredita en enteros; la parte fraccionaria se guarda.
 
-## 14. Preguntas abiertas para Feño (bloqueos)
+## 14. Preguntas de diseño y sus respuestas
 
-| Id | Pregunta | Recomendación | Bloquea T-022 |
+| Id | Pregunta | Respuesta | Estado |
 |---|---|---|---|
-| Q-019 | Ritmo general de la economía | Medio (RITMO = 1,0): pop 500 en ~44 min; partidas de 60–90 min | Sí |
-| Q-020 | Cómo trabajan los operarios | Asignados dentro del edificio (no visibles, cuentan pop) | Sí |
-| Q-021 | ¿Se pueden interceptar los vapores carboneros? | Sí, son visibles y se pueden hundir | No |
-| Q-022 | ¿La oficina de paradas se puede mejorar a Shanks? | Sí, por 450 P y 120 s, sin dejar de producir | No |
-| Q-023 | Cómo compensar a Bolivia | Remesa del altiplano por el borde este, interceptable | No (puede ir a T-031) |
-| Q-024 | ¿El carbón se usa fuera de los buques y la Shanks? | No en v1 | No |
-| Q-025 (Luis) | Forma de las cargas y campos nuevos en ADR-007 | Ampliar ResourceDef con `kind` y BuildingDef con los campos de §12.3 | No |
+| Q-019 | Ritmo general de la economía | Medio (RITMO = 1,0): pop 500 en ~44 min; partidas de 60–90 min | Respondida por Feño |
+| Q-020 | Cómo trabajan los operarios | Asignados dentro del edificio (no visibles, cuentan pop) | Respondida por Feño |
+| Q-021 | ¿Se pueden interceptar los vapores carboneros? | Sí: visibles, sin armas y se pueden hundir | Respondida por Feño |
+| Q-022 | ¿La oficina de paradas se puede mejorar a Shanks? | Sí, por 450 P y 120 s, sin dejar de producir | Respondida por Feño |
+| Q-023 | Cómo compensar a Bolivia | Remesa del altiplano por el borde este cada 120 s (300 P y 200 V), atacable | Respondida por Feño |
+| Q-024 | ¿El carbón se usa fuera de los buques y la Shanks? | No: en v1 solo buques y Shanks | Respondida por Feño |
+| Q-025 (Luis) | Forma de las cargas y campos nuevos en ADR-007 | Recomendación: ampliar ResourceDef con `kind` y BuildingDef con los campos de §12.3 | **Abierta** (no bloquea el diseño; sí la implementación de los datos) |
 
-Mientras no se respondan, los valores recomendados son los que usa este documento. Si la respuesta es otra, se ajustan las secciones marcadas con el Id de la pregunta.
+Todas las respuestas de Feño coinciden con las opciones que ya usaba este documento, así que no cambió ninguna cifra. Q-025 solo afecta a la forma de los campos de §12, no a los valores.
 
 ## 15. Licencias y apartamientos de la historia
 
@@ -543,7 +543,7 @@ Mientras no se respondan, los valores recomendados son los que usa este document
 | La mina de cobre incluye la fundición | Simplificar v1 | Diseño (este documento) |
 | Una carga vale 1 P por unidad para todos los minerales | Legibilidad; la plata vale más por viaje (densidad) | Diseño |
 | Yacimientos infinitos | Partidas de 60–90 min; la producción de 1879 no se agotaba en meses | Diseño |
-| Remesa del altiplano (si se acepta Q-023) | Bolivia sin recursos dentro del mapa | Diseño; el historiador debe revisar la ruta |
+| Remesa del altiplano (Q-023) | Bolivia sin recursos dentro del mapa | Diseño; el historiador debe revisar la ruta |
 
 ## 16. Para v2
 
@@ -563,7 +563,7 @@ Mientras no se respondan, los valores recomendados son los que usa este document
 
 ## 18. Pendiente
 
-- Respuestas de Q-019 a Q-025 y ajuste de las secciones afectadas.
+- Respuesta de Luis a Q-025 (forma de las cargas y de los campos nuevos en ADR-007) antes de cargar los .tres.
 - Yacimientos, vías históricas y distancias reales en los datos del mapa (T-011, con el historiador); las distancias de §5.5 son aproximadas.
 - Corrección del texto «C = carbón (solo buques)» y del tope de pop en unidades.md (comentado en T-016).
 - Bonificaciones económicas de facción (T-031).
