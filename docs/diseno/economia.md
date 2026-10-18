@@ -1,6 +1,6 @@
 # Economía v1: recursos y edificios
 
-> Tarea: **T-022** (P-004). Agente: game-designer. Estado: en revisión. Feño respondió Q-019 a Q-024 (§14); queda abierta Q-025 para Luis (forma de los datos).
+> Tarea: **T-022** (P-004). Agente: game-designer. Estado: en revisión (2.ª ronda, con las correcciones de QA). Feño respondió Q-019 a Q-024 (§14) y decidió las observaciones 4 (qué buques bloquean) y 8 (Bolivia y el litoral) de QA; queda abierta Q-025 para Luis (forma de los datos).
 > Fuentes: `docs/historia/recursos-1879.md` (T-035, sobre todo §10 y §11), `docs/historia/geografia-1879.md` (§6–§8), `docs/diseno/unidades.md` (T-016).
 > Decisiones que respeta: **ADR-006** (6 jugadores × ~500 unidades, ~300 edificios en total, tick de 20 Hz), **ADR-007** (ResourceDef, BuildingDef, `drop_off`, `pop_provided`, `trains`), **ADR-009** (geografía a 1:20, edificios en metros reales, velocidades de diseño), **ADR-014** (caja del mapa), **ADR-016** (carbón por mar, sin minas en el mapa), **ADR-017** (oficina de paradas y Shanks, tiempos comprimidos, yacimientos según su estado en 1879), **ADR-018/019** (interfaz de cartografía de 1879, colores de facción).
 > Convención de marcas: **[J]** valor de juego propuesto aquí; **[Q-xxx]** decidido por Feño en esa pregunta (§14); **[A]** necesita forma de datos que decide el arquitecto (§12.3).
@@ -14,7 +14,7 @@ La economía tiene que contar lo mismo que la guerra de 1879: **el desierto vale
 - Los **víveres** salen de valles y oasis, o se importan por mar con pesos. Los **pesos** pagan casi todo. El **carbón** llega por mar (ADR-016) y es el cuello de botella de la escuadra y de las oficinas Shanks.
 - Decisiones del jugador: barato y seguro (oficina de paradas, carretas) contra caro y productivo pero dependiente del mar (Shanks, tren, carbón); defender puertos y vías contra atacar los del enemigo.
 
-**Para el prototipo bastan 3 recursos, 4 cargas, 17 edificios y 2 porteadores** (§2 y §4). Agua, fundiciones, ingenios y captura de edificios quedan para v2 (§13).
+**Para el prototipo bastan 3 recursos, 4 cargas, 17 edificios y 2 porteadores** (§2 y §4). Agua, fundiciones, ingenios y captura de edificios quedan para v2 (§16).
 
 ## 2. Recursos
 
@@ -42,7 +42,7 @@ Las cargas **no** se guardan en el tesoro del jugador: existen en la **bodega** 
 | `cobre` | Cobre en barra | 1 P por unidad | 1,5 | Mina de cobre |
 
 - Todas valen 1 P por unidad para que las tasas de producción se lean directamente en pesos por minuto. Lo que diferencia a la plata y al cobre es la **densidad**: una carreta lleva 200 de volumen, es decir 200 de salitre o 800 de plata.
-- El agua **no** es un recurso en v1 (unidades.md §6.3). Ver §13.
+- El agua **no** es un recurso en v1 (unidades.md §6.3). Ver §16.
 
 ## 3. Reglas generales
 
@@ -57,10 +57,15 @@ Las cargas **no** se guardan en el tesoro del jugador: existen en la **bodega** 
 ### 3.2 Construir
 
 - Lo construyen operarios. `build_time` es el tiempo con **1 operario**. Con n operarios (máximo 5): `tiempo = build_time / (1 + 0,5 × (n − 1))`. Dos operarios: ×0,67; cinco: ×0,33.
-- El costo se paga completo al poner los cimientos. Cancelar devuelve el 100 %. Un edificio destruido no devuelve nada.
-- **Reparar:** 1 operario repara 10 de vida por segundo y cobra, proporcionalmente, el 25 % del costo del edificio por la vida que repone.
+- El costo se paga completo al poner los cimientos. Un edificio destruido no devuelve nada.
+- **Cimientos:** nacen con el 10 % de `max_hp` y ganan vida en proporción al avance de la obra. **Cancelar devuelve el 80 %.** Unos cimientos que pasan **60 s sin ningún operario trabajando** se cancelan solos (con el mismo 80 %). Así, ocupar un sitio de yacimiento con cimientos cuesta el 20 % del edificio cada vez y no dura más de 60 s sin gente; y unos cimientos de oficina Shanks (200 de vida) caen con 25 tiros de fusil.
+- **Reparar:** 1 operario repara **3 de vida por segundo**; como máximo **3 reparadores** por edificio (9 de vida por segundo). **No se puede reparar un edificio que recibió daño en los últimos 15 s** (más que el cooldown del arma más lenta que dispara contra tierra, la `torre_10` del monitor, 14 s). Cobra, proporcionalmente, el 25 % del costo del edificio por la vida que repone.
+  - Consecuencia: mientras un buque o una tropa sigue disparando, no hay reparación, y los cálculos de §4.3 y §7.2 valen tal cual. La reparación sirve **entre** ataques: un fuerte a media vida (1250) vuelve a estar entero en 139 s con 3 operarios y cuesta 0,25 × 450 × 0,5 ≈ 56 de recursos.
+  - Si el atacante dispara de forma intermitente para dejar reparar al defensor, pierde: para que haya reparación tiene que dejar de disparar más de 15 s, y en ese tiempo 3 reparadores solo recuperan (t − 15) × 9 de vida.
 - **Zona de influencia:** todo edificio se coloca a ≤ 3000 m de un centro propio o a ≤ 1000 m de un almacén o fuerte propio (3 km de juego = ~60 km reales). Así no se construye al otro lado del mapa sin presencia.
 - **Tope de 50 edificios por jugador** (cimientos incluidos), consecuencia de ADR-006 (~300 edificios en total con 6 jugadores). Las vías férreas son del mapa y no cuentan.
+- **Distancia a un edificio:** toda distancia entre una unidad y un edificio (alcance de armas en ambos sentidos, visión, radio de bloqueo, zona de influencia, acopio, entregas) se mide **desde el centro de la unidad hasta el punto más cercano del borde de la huella** del edificio (un rectángulo). Un edificio que dispara lo hace desde ese borde. Así el alcance mínimo de 30 m del fuerte es una franja de 30 m alrededor de sus muros, no un círculo dentro de su propia huella de 80 × 80 m.
+- **Asalto a un edificio con alcance mínimo:** con una orden de atacar (ATTACK o ATTACK_MOVE hacia él) a un edificio cuya arma tiene `min_range`, las unidades de tierra no se detienen a su alcance normal (40 m la infantería, unidades.md §5.2–5.3), sino a **min_range − 5 m** del borde (25 m en el fuerte), dentro del ángulo muerto, y desde ahí disparan. Si solo lo atacan por adquisición automática, se detienen a su alcance normal, dentro de la franja de tiro del fuerte.
 
 ### 3.3 Yacimientos
 
@@ -79,11 +84,11 @@ Las haciendas y chacras **solo producen** si están a ≤ 1500 m de un centro o 
 | Operario dentro de un edificio | Sí (1) | Dentro de los 500 de pop | No es entidad visible: ahorra entidades |
 | Carreta, tren | Sí (1 y 2) | Dentro de los 500 de pop | Garantiza que un jugador nunca pase de 500 entidades móviles |
 | Vapor carbonero | No | 1 en tránsito por carbonera, 2 carboneras por jugador → ≤ 2 | Lo genera el contrato, no el jugador |
-| Recua de la remesa del altiplano (Bolivia, Q-023) | No | 1 en tránsito | Igual |
+| Recua de la remesa del altiplano (solo Bolivia, Q-023) | No | ≤ 3 en tránsito (sale 1 cada 120 s y tarda 300 s, §10) | Igual |
 | Lanchas del muelle | — | — | **Solo cosméticas en el cliente**, no son entidades de la simulación |
 | Edificios | — | 50 por jugador | ADR-006: ~300 en total |
 
-Peor caso: 6 × (500 + 3) + 300 = **3318 entidades**, por debajo del margen medido de 4500 de ADR-006.
+Entidades sin pop por jugador: hasta 2 en Chile y Perú (vapores) y hasta 5 en Bolivia (2 vapores y 3 recuas). Peor caso con 6 jugadores, como máximo 2 por facción (Q-002): 4 × (500 + 2) + 2 × (500 + 5) + 300 = **3318 entidades**, por debajo del margen medido de 4500 de ADR-006.
 
 ## 4. Edificios
 
@@ -116,7 +121,7 @@ Notas:
 - **Centro inicial:** cada jugador empieza con 1 centro, 6 operarios y los recursos de §2.1. Con un centro tiene 50 de pop; los 500 se alcanzan con 3 centros y 7 poblaciones, o 1 centro y 9 poblaciones.
 - **Cuartel único en v1:** entrena guardia nacional, infantería de línea, Colorados (Bolivia), caballería y artillería de campaña. Separarlo (caballeriza, maestranza) es una opción de v2 si hace falta ritmo de progresión.
 - **Astillero por facción:** Chile entrena transporte, torpedera, corbeta y blindado de batería; Perú, transporte, torpedera, corbeta y monitor de torre (FactionDef y `trains`). Bolivia no tiene astillero sino la agencia de fletes (solo transporte).
-- **Bolivia sin puerto propio:** puede embarcar sus cargas y comprar carbón en muelles y carboneras **aliados** (§5.2 y §6.4).
+- **Bolivia y el litoral** (decisión de Feño sobre la obs. 8 de QA): mientras conserve costa propia, Bolivia construye **muelle y carbonera como las demás facciones**. Si la pierde, embarca sus cargas en muelles **aliados** (§5.3) y compra carbón en carboneras **aliadas** (§6.1). La remesa del altiplano (§10) existe desde el inicio de la partida, tenga o no litoral.
 
 ### 4.2 Mejora de la oficina de paradas a Shanks (Q-022, respondida)
 
@@ -132,16 +137,24 @@ La artillería de costa es un edificio (unidades.md §3.1). Arma propuesta:
 
 Visión del fuerte: 230 m. Alcance 220 m: supera por 20 m a los cañones pesados de los buques (200 m), así que un fuerte domina su bahía, como en Arica y el Callao.
 
-| Enfrentamiento (sin reparar) | Resultado | Cálculo |
+Distancias medidas desde el borde de la huella del fuerte (§3.2). La reparación no actúa en ninguna fila: el fuerte recibe daño al menos cada 14 s y la regla de §3.2 exige 15 s sin daño.
+
+| Enfrentamiento | Resultado | Cálculo |
 |---|---|---|
 | Fuerte contra 1 blindado de batería (duelo a 200 m) | **Gana el fuerte** en t = 240 s y queda con 106 de vida | Fuerte: 140 − 22 = 118 por disparo, 21 disparos (t = 0…240) contra 2400. Blindado: 120 − 6 = 114 cada 12 s, 21 disparos hasta t = 240 = 2394 contra 2500 (le faltaba 1 disparo). Si el blindado se queda a más de 220 m, ninguno dispara |
 | Fuerte contra 1 monitor | **Gana el fuerte** en t = 168 s y queda con 628 | 140 − 20 = 120, 15 disparos (t = 0…168). Monitor: 150 − 6 = 144 cada 14 s → 13 disparos hasta t = 168 = 1872 |
 | Fuerte contra blindado + monitor | **Ganan los buques** en ~130 s; el fuerte, que dispara al monitor, lo deja con ~500 | Buques: 9,5 + 10,3 = 19,8 DPS → 2500 / 19,8 ≈ 126 s, más el redondeo de los disparos |
 | Fuerte contra corbetas | Las corbetas no lo alcanzan desde fuera de los 220 m (sus cañones llegan a 150 m); si se acercan le hacen 20 − 6 = 14 por disparo | El fuerte le hace 137 por disparo a una corbeta: la hunde en 8 disparos (84 s) |
-| 15 infanterías de línea dispersas lo asaltan | **Gana la infantería** en ~6 min, perdiendo ~5 en la aproximación | De 220 a 30 m: 190 m a 3,5 m/s = 54 s bajo fuego (5 disparos, 1 baja por disparo si van dispersas). Dentro de los 30 m el fuerte no dispara. 10 infantes: 10 × (8 − 6) / 3 = 6,7 DPS → 2500 / 6,7 ≈ 375 s |
-| 30 infanterías de línea dispersas | **Gana la infantería** en ~3 min | Llegan 25: 16,7 DPS → 150 s |
+| 15 infanterías de línea **dispersas** (más de 4 m entre figuras), con orden de atacar el fuerte | **Gana la infantería** en t ≈ 428 s (~7 min), perdiendo 5 | Regla de asalto (§3.2): se detienen a 25 m del muro. De 220 a 25 m: 195 m a 3,5 m/s = 55,7 s; el fuerte dispara en t = 0, 12, 24, 36 y 48 (5 disparos, 1 baja cada uno: 140 > 60 de vida). Llegan 10: descargas de 10 × (8 − 6) = 20 cada 3 s → 125 descargas → t = 55,7 + 124 × 3 = 427,7 s |
+| 30 infanterías de línea dispersas | **Gana la infantería** en t ≈ 203 s (~3,4 min), perdiendo 5 | Llegan 25: 50 por descarga → 50 descargas → t = 55,7 + 49 × 3 = 202,7 s |
+| 15 infanterías **agrupadas** | **Gana el fuerte**: mueren las 15 antes de llegar | Cada disparo: 140 + hasta 4 × 70 (área de 4 m) → hasta 5 bajas; 5 disparos = 25 bajas posibles |
+| 15 infanterías sin la orden de asalto (adquisición automática) | **Gana el fuerte** con ~2060 de vida | Se detienen a 40 m, dentro de la franja de tiro (30–220 m). En la aproximación (180 m, 51 s) caen 5; llegan 10. El fuerte mata 1 cada 12 s, mientras ellos hacen 4 descargas de n × 2 por intervalo: 8 × (10 + 9 + … + 1) = 440 de daño en 120 s |
+| 10 caballerías dispersas (20 pop, 1000 V / 600 P) | **Gana la caballería** en t ≈ 138 s (~2,3 min), perdiendo 3 | El sable (2,5 m) está dentro del ángulo muerto. De 220 a 2,5 m: 217,5 m a 7 m/s = 31,1 s → disparos en t = 0, 12 y 24 (3 bajas: 140 > 80). Llegan 7: 7 × (11 − 6) = 35 cada 1,5 s → 72 golpes → t = 31,1 + 71 × 1,5 = 137,6 s |
 
-Lectura: el fuerte es la defensa costera barata (450 de costo frente a 1050 de un blindado), gana a un buque solo y pierde ante una escuadra o un asalto de infantería numeroso y disperso, como el Morro de Arica en junio de 1880. La artillería de campaña lo daña poco (24 cada 8 s) y tiene que ponerse dentro de su alcance para hacerlo.
+Lectura: el fuerte es la defensa costera barata (450 de costo frente a 1050 de un blindado). Gana a un buque solo y pierde ante dos buques de línea o ante un asalto numeroso y disperso, como el Morro de Arica en junio de 1880.
+
+- **Contra tierra, la caballería asalta mejor que la infantería:** 10 caballerías (20 pop, 1600 de recursos) lo toman en ~2,3 min; 30 infantes (30 pop, 2700 de recursos) tardan ~3,4 min. Es razonable: la caballería cruza la franja de tiro en la mitad de tiempo y su sable trabaja en el ángulo muerto. Si en la prueba jugable resulta dominante, la palanca es la armadura del fuerte contra el sable (por ejemplo, armadura 8: el sable haría 3 y la infantería 0) o un daño contra edificios por arma; no se cambia ahora.
+- La artillería de campaña lo daña poco (30 − 6 = 24 cada 8 s) y tiene que ponerse dentro de su franja de tiro (alcance 120 m < 220 m) para hacerlo.
 
 ### 4.4 Covadera
 
@@ -213,8 +226,10 @@ La última fila muestra el problema de Bolivia (§10).
 |---|---|---|---|---|
 | Chile | Lota y Coronel, por el borde sur (ADR-016) | 0,5 P por C | 75 P | 4000 m al **sur** de la carbonera, por el mar |
 | Perú | Importado (fuera del mapa) | 2 P por C | 300 P | 4000 m al **oeste** de la carbonera, mar adentro |
-| Bolivia | Importado, en carboneras aliadas | 2 P por C | 300 P | Igual que Perú |
+| Bolivia | Importado: en su carbonera mientras tenga costa; si no, en carboneras aliadas | 2 P por C | 300 P | Igual que Perú |
 
+- **Contratos en carboneras aliadas:** cada carbonera admite **2 contratos**, el de su dueño y el de 1 aliado. Cada contrato tiene su propio vapor (150 C cada 180 s, pagado por quien lo firma, a su precio de facción), así que el aliado no le quita carbón al dueño. Un jugador puede tener como máximo **2 contratos** en total (propios o en carboneras aliadas): sigue habiendo ≤ 2 vapores por jugador (§3.5). El carbón llega al tesoro de quien firmó. Si la carbonera aliada se destruye o deja de ser aliada, el contrato se cancela (el vapor en camino se pierde, sin reembolso, como si lo hundieran).
+- **Bolivia empieza con 0 C** (§2.1). Para fletar su primer transporte (50 C) necesita antes una carbonera propia (mientras tenga costa) o un contrato en una aliada; la agencia de fletes y la carbonera son edificios de costa, así que mientras Bolivia pueda tener una agencia también puede tener una carbonera. Sin costa propia ni aliado con carbonera, **Bolivia no puede fletar transportes**: es explícito y coherente con la historia (después de 1879 dependió de los buques peruanos). Su primer transporte cuesta, en la práctica, 50 V / 150 P / 50 C más 250 P de la carbonera y 300 P del primer viaje de carbón (que trae 150 C, suficientes para 3 transportes).
 - **Licencia (compresión, cubierta por L2 de ADR-017):** el vapor no recorre los ~1000 km de Lota a Antofagasta; aparece a 4000 m de juego (~80 km reales) de la carbonera, en la dirección de su origen, y llega en 160 s a marcha. Así Chile conserva su ventaja histórica (precio) sin esperar 40 minutos por viaje.
 - Si no hay pesos para el viaje, el contrato espera (aviso «sin fondos para el carbón»).
 
@@ -224,7 +239,7 @@ La última fila muestra el problema de Bolivia (§10).
 |---|---|---|---|---|---|---|---|
 | `vapor_carbonero` | 400 | 1 | 10 / 25 | 10 | 120 | ninguna | 0 (no lo controla el jugador) |
 
-Decidido por Feño en Q-021: el vapor es una entidad visible, sin armas, y **se puede hundir**. Si se hunde se pierden el carbón y el pago, y el siguiente sale 180 s después. Un buque enemigo armado a ≤ 400 m de la entrada o de la carbonera detiene la salida (§7). Así la guerra de corso tiene un blanco, como la captura del *Rímac* por el *Huáscar* en julio de 1879.
+Decidido por Feño en Q-021: el vapor es una entidad visible, sin armas, y **se puede hundir**. Si se hunde se pierden el carbón y el pago, y el siguiente sale 180 s después. Si la carbonera está bloqueada (§7.1: buque enemigo con armas contra tierra a ≤ 400 m), el vapor espera en la entrada. Así la guerra de corso tiene un blanco, como la captura del *Rímac* por el *Huáscar* en julio de 1879.
 
 ### 6.3 Quién consume carbón (Q-024, respondida)
 
@@ -253,17 +268,18 @@ Se evalúa a 1 Hz para cada muelle, covadera y carbonera, en un radio de **400 m
 
 | Situación en el radio | Estado | Exportación, importación de víveres, contrato de carbón |
 |---|---|---|
-| Ningún buque enemigo armado | Libre | 100 % |
-| Buque enemigo armado y algún buque armado propio o aliado | Disputado | 50 % |
-| Buque enemigo armado y ningún buque armado propio o aliado | **Bloqueado** | 0 %: la carga se acumula en la bodega del muelle; el vapor carbonero espera en la entrada |
+| Ningún buque enemigo bloqueador | Libre | 100 % |
+| Buque enemigo bloqueador y algún buque bloqueador propio o aliado | Disputado | 50 % |
+| Buque enemigo bloqueador y ningún buque bloqueador propio o aliado | **Bloqueado** | 0 %: la carga se acumula en la bodega del muelle; el vapor carbonero espera en la entrada |
 
-- «Buque armado» = unidad SEA con al menos un arma (el transporte y el vapor carbonero no cuentan).
+- **«Buque bloqueador»** (decisión de Feño sobre la obs. 4 de QA) = unidad SEA con al menos un arma cuyo `target_domains` incluye LAND: en v1, **corbeta, blindado de batería y monitor de torre**. La torpedera (su torpedo solo apunta a SEA), el transporte y el vapor carbonero **no bloquean ni disputan**. Así no hay bloqueo barato con torpederas, y para disputar un bloqueo hace falta al menos una corbeta.
+- Se calcula con la misma regla en ambos sentidos: un buque propio solo «disputa» si también es bloqueador.
 - Un fuerte no rompe el bloqueo por sí solo: tiene que hundir o ahuyentar al buque. Su alcance de 220 m cubre la mitad interior del radio de 400 m, así que un bloqueador puede mantenerse a 220–400 m, fuera de su alcance, como hizo la escuadra frente a Iquique (5 de abril de 1879).
 - El bloqueo se levanta en el tick siguiente a que deje de cumplirse la condición.
 
 ### 7.2 Ataque costero
 
-- Muelles, covaderas, carboneras y astilleros son objetivo LAND al alcance de los cañones navales. Ejemplos: un blindado destruye un muelle (1500, armadura 4) en 13 disparos (116 cada 12 s), en t = **144 s**; una corbeta, con cañones ligeros (16 cada 3 s), en ≈ **280 s**.
+- Muelles, covaderas, carboneras y astilleros son objetivo LAND al alcance de los cañones navales. Ejemplos: un blindado destruye un muelle (1500, armadura 4) en 13 disparos (116 cada 12 s), en t = **144 s**; una corbeta, con cañones ligeros (16 cada 3 s), en ≈ **280 s**. La reparación no lo impide: el muelle recibe daño cada 12 s o menos y no se puede reparar sin 15 s seguidos sin daño (§3.2).
 - Destruir el muelle pierde lo que hubiera en su bodega.
 
 ## 8. Interacción con el combate
@@ -313,7 +329,8 @@ Tiempo para recuperar la inversión desde que el edificio está lleno (inversió
 | Shanks (Perú) + 2 estaciones y 1 tren (650) | 1650 | 220 | **7,5 min** |
 | Shanks (Chile) + estaciones y tren | 1650 | 235 | 7,0 min |
 | Segunda Shanks en la misma vía (+1 tren, 250) | 1250 | 220 | 5,7 min |
-| Mejora paradas → Shanks (Q-022): 450 P + 2 operarios | 550 | +130 (Perú) | 4,2 min |
+| Mejora paradas → Shanks (Q-022) con carretas: 450 P + 2 operarios (100) + 5 carretas más (400; las 3 de la paradas llevan 91 P/min y la Shanks produce 240: hacen falta 8) | 950 | +130 (Perú) | **7,3 min** |
+| Mejora paradas → Shanks (Q-022) con tren: 450 P + 2 operarios (100) + 2 estaciones y 1 tren (650); las 3 carretas quedan libres para otro extractor | 1200 | +130 (Perú) | 9,2 min (pero la oficina pasa de 9 a 10 de pop: 22 P/min por pop) |
 | Covadera + 5 operarios | 150 + 250 = 400 | 90 | 4,4 min |
 | Covadera en Chincha | 400 | 9 | 44 min (no compensa: ADR-017) |
 | Mina de plata en Caracoles + 6 operarios + 5 carretas (10 km) | 300 + 300 + 400 = 1000 | 90 | 11,1 min (en declive: ADR-017) |
@@ -329,19 +346,21 @@ Tiempo para recuperar la inversión desde que el edificio está lleno (inversió
 | Depende del mar | No | Sí: carbón (bloqueo de la carbonera la apaga) |
 | Cuándo conviene | Al principio, en cantones lejos de la vía, cuando el mar está en disputa | Mitad de partida, junto a una vía y con el carbón asegurado |
 
-La Shanks rinde **2,2 veces** más por pop que la paradas si tiene tren. Con un tope de 500 de pop eso es lo que decide, no el costo en pesos. Bloquear la carbonera de un rival con Shanks le quita el 100 % de esa producción en ~1 minuto (cuando se acaba su reserva de carbón).
+La Shanks rinde **2,2 veces** más por pop que la paradas si tiene tren. Con un tope de 500 de pop eso es lo que decide, no el costo en pesos. Bloquear la carbonera de un rival corta su suministro, pero sus Shanks siguen trabajando con el **carbón almacenado** en su tesoro hasta agotarlo: a 10 C/min, los 200 C iniciales duran 20 min con una Shanks y 10 min con dos (menos si a la vez construye buques). El bloqueo apaga la Shanks a mediano plazo, no al instante; por eso conviene bloquear temprano y mantenerlo.
 
 ### 9.4 Ritmo de la partida (simulación; Q-019, respondida)
 
-Script reproducible: `docs/diseno/balance/sim_economia.mjs` (`node sim_economia.mjs RITMO PRECIO_CARBON`). Un jugador sin pérdidas desarrolla su economía en este orden: hacienda, paradas, muelle, hacienda, cuartel, hacienda, paradas, carbonera, Shanks con tren, hacienda, segundo centro, covadera, ... hasta 110 operarios y 10 de pop en porteadores, y gasta el resto en infantería de línea. Poblaciones cuando le faltan ≤ 8 de pop. Es una partida de «desarrollo» sin ataques: el peor caso para tener ejército pronto.
+Script reproducible: `docs/diseno/balance/sim_economia.mjs` (`node sim_economia.mjs RITMO PRECIO_CARBON`). Un jugador sin pérdidas desarrolla su economía en este orden: hacienda, paradas, muelle, hacienda, cuartel, hacienda, paradas, carbonera, Shanks con tren, hacienda, segundo centro, covadera, hacienda, cuartel, segunda Shanks, **segundo muelle**, ... hasta 110 operarios y 10 de pop en porteadores, y gasta el resto en infantería de línea. Poblaciones cuando le faltan ≤ 8 de pop. Es una partida de «desarrollo» sin ataques: el peor caso para tener ejército pronto. El salitre sale por muelles con el tope de 500 P/min de §5.3 (lo que no cabe espera en las bodegas de 600 de cada oficina); el segundo muelle hace falta cuando entra la segunda Shanks (720 P/min de salitre). En las tres corridas no se pierde salitre por bodegas llenas.
 
 | RITMO | Plan económico completo (min) | 30 militares | 100 | 200 | 300 | 380 (pop 500) | Ingreso a los 40 min (V + P acumulados) |
 |---|---|---|---|---|---|---|---|
-| 0,75 (lento) | 25,3 | 26,4 | 33,5 | 41,0 | 49,1 | **55,5** | 17 058 V + 16 396 P |
-| **1,0 (medio, elegido en Q-019)** | 21,7 | 22,3 | 27,7 | 33,2 | 39,3 | **44,1** | 24 674 V + 22 760 P |
-| 1,4 (rápido) | 17,1 | 18,6 | 22,9 | 28,1 | 32,8 | **36,4** | 38 137 V + 32 736 P |
+| 0,75 (lento) | 25,6 | 26,8 | 33,5 | 41,2 | 49,3 | **55,8** | 16 884 V + 16 362 P |
+| **1,0 (medio, elegido en Q-019)** | 22,1 | 22,6 | 27,9 | 33,3 | 39,4 | **44,3** | 24 544 V + 22 744 P |
+| 1,4 (rápido) | 17,6 | 19,1 | 23,3 | 28,4 | 33,1 | **36,7** | 37 455 V + 33 539 P |
 
-Con el carbón a 0,5 P (Chile) la curva es casi igual (pop 500 en 44,1 min): la ventaja chilena del carbón está en la escuadra, no en el salitre.
+(Corrida del 17-10-2026 con el tope de muelle; sin él, las cifras eran 0,2–0,4 min más bajas. Las respuestas de Q-019 citan las cifras anteriores, 44 y 36 min, que siguen valiendo redondeadas.)
+
+Con el carbón a 0,5 P (Chile) la curva es casi igual (pop 500 en 44,2 min): la ventaja chilena del carbón está en la escuadra, no en el salitre.
 
 **Ingreso de un jugador con la economía completa** (medio, Perú, minuto ~25): **1000 V/min y ~920 P/min netos** con 110 operarios (22 % del pop). Comparación con unidades.md §4:
 
@@ -364,10 +383,33 @@ Lectura: en «medio», un ejército de 100 a los ~28 min y el tope de pop a los 
 
 **El problema (recursos-1879 §10.4):** si Bolivia pierde el litoral (Antofagasta, Mejillones, Tocopilla, Cobija, Caracoles), dentro de la caja del mapa solo le quedan Corocoro (cobre) y los oasis del altiplano y de Atacama. Su plata (Huanchaca, Potosí) y sus valles (Cochabamba, Chuquisaca) están fuera del mapa (ADR-014). Y Corocoro queda a ~22 km de juego de Arica: una carreta tarda 92 min en ir y volver (§5.5), así que su cobre casi no rinde.
 
-Si la partida empieza antes del 14 de febrero de 1879 (posiciones iniciales aún sin decidir), Bolivia sí tiene el litoral al comienzo y el problema aparece cuando lo pierde. Feño eligió en Q-023 la remesa del altiplano, con estas cifras:
+Si la partida empieza antes del 14 de febrero de 1879 (posiciones iniciales aún sin decidir), Bolivia sí tiene el litoral al comienzo y el problema aparece cuando lo pierde. Feño eligió en Q-023 la remesa del altiplano (150 P/min y 100 V/min) y, sobre la obs. 8 de QA, que exista **desde el inicio de la partida**, tenga o no litoral.
 
-- **Remesa del altiplano:** cada 120 s entra por el borde este del mapa (camino de La Paz a Tacna, por el paso de Tacora o Charaña) una **recua** (entidad sin armas, 300 de vida, 6 m/s, pop 0, máximo 1 en tránsito) con **300 P y 200 V** hacia el centro o almacén boliviano más cercano: **150 P/min y 100 V/min**, equivalente a 1,5 oficinas de paradas y una hacienda llenas, sin operarios. Se puede atacar (se pierde lo que lleva) y llega más tarde cuanto más lejos esté el centro boliviano del borde este.
-- Bolivia embarca en muelles aliados (§5.3) y compra carbón en carboneras aliadas (§6.1).
+### 10.1 Remesa del altiplano: mecanismo
+
+Representa la plata de Huanchaca y Potosí y los víveres de los valles del interior, que están **al este de 67° W, fuera de la caja** (ADR-014). La Paz y Oruro quedan dentro de la caja, así que la remesa no «viene de La Paz»: viene de fuera del mapa por el este.
+
+- **Destino:** el centro o almacén boliviano situado más al este (mayor x). Si no hay ninguno, la remesa se suspende (no se acumula).
+- **Entrada:** la recua aparece a **2400 m** de juego del destino (~48 km reales), en dirección al borde este (o en el borde mismo si el destino está a menos de 2400 m de él). Es la misma compresión que la del vapor carbonero (L2 de ADR-017).
+- **Ritmo:** sale **1 recua cada 120 s**, con **300 P y 200 V**, sin importar cuántas haya en camino. Recua: sin armas, 300 de vida, armadura 0, 3 / 8 m/s (táctica / marcha, como la carreta), pop 0.
+- **Tránsito:** 2400 m / 8 m/s = **300 s**. Con una salida cada 120 s hay como máximo ⌈300 / 120⌉ = **3 recuas en camino** (2,5 de media). La primera llega en t = 300 s; desde entonces llega 1 cada 120 s.
+- **Ingreso resultante:** 300 P / 120 s = **150 P/min** y 200 V / 120 s = **100 V/min**, la cifra de Q-023. Equivale a 1,7 oficinas de paradas y una hacienda llenas, sin operarios.
+- **Ataque:** si una recua muere, se pierde su carga; las siguientes salen igual cada 120 s. Una recua que entra en combate pasa a velocidad táctica (3 m/s) y tarda más. Si el destino se destruye, las recuas en camino van al siguiente destino; si no hay, desaparecen con su carga.
+- **Coste en entidades:** hasta 3 por jugador boliviano (§3.5).
+
+| Comprobación | Valor |
+|---|---|
+| Tiempo de tránsito | 2400 / 8 = 300 s |
+| Recuas en camino | ⌈300 / 120⌉ = 3 como máximo |
+| Ingreso a régimen | 150 P/min y 100 V/min |
+| Ingreso acumulado a los 10 min | Llegadas en t = 300, 420 y 540 s: ⌊(600 − 300) / 120⌋ + 1 = 3 entregas = 900 P y 600 V |
+| Ingreso acumulado a los 40 min | ⌊(2400 − 300) / 120⌋ + 1 = 18 entregas = 5400 P y 3600 V |
+
+### 10.2 Litoral y carbón
+
+- Mientras tenga costa, Bolivia construye muelle y carbonera como las demás facciones; sin costa, usa los de sus aliados (§4.1, §5.3, §6.1).
+- Bolivia empieza con 0 C. Para fletar transportes necesita una carbonera propia o un contrato en una aliada (§6.1). Sin ninguna de las dos no puede fletar transportes.
+- El historiador debe revisar qué ruta histórica representa la entrada (por ejemplo, Potosí–Uyuni–Oruro hacia Tacna por Tacora o Charaña) y cómo se explica en la enciclopedia.
 
 ## 11. Cómo se ve en pantalla
 
@@ -423,26 +465,26 @@ Las huellas son el **núcleo** del edificio en metros reales (ADR-009); el campa
 
 Campos existentes de ADR-007: `cost`, `build_time`, `max_hp`, `armor`, `vision_range`, `weapons`, `footprint`, `placement`, `trains`, `pop_provided`, `drop_off`.
 
-| id | cost | build_time | max_hp | armor | vision_range | footprint | placement | trains | pop_provided | drop_off |
-|---|---|---|---|---|---|---|---|---|---|---|
-| centro | V 200, P 600 | 180 | 4000 | 5 | 120 | (6, 6) | LAND | operario, carreta | 50 | viveres |
-| poblacion | V 50, P 100 | 40 | 600 | 2 | 40 | (4, 4) | LAND | — | 50 | — |
-| almacen | P 120 | 30 | 800 | 3 | 60 | (3, 3) | LAND | — | 0 | viveres |
-| cuartel | P 200 | 60 | 1500 | 4 | 60 | (6, 4) | LAND | guardia_nacional, infanteria_linea, caballeria, artilleria_campana (+ colorados_bolivia en Bolivia) | 0 | — |
-| astillero_chile | P 500 | 120 | 2500 | 5 | 150 | (8, 4) | COAST | transporte, torpedera, corbeta, blindado_bateria_chile | 0 | — |
-| astillero_peru | P 500 | 120 | 2500 | 5 | 150 | (8, 4) | COAST | transporte, torpedera, corbeta, monitor_torre_peru | 0 | — |
-| agencia_fletes_bolivia | P 250 | 60 | 1200 | 3 | 100 | (4, 3) | COAST | transporte | 0 | — |
-| fuerte | V 50, P 400 | 120 | 2500 | 6 | 230 | (5, 5) | LAND | — | 0 | — |
-| muelle | P 250 | 60 | 1500 | 4 | 100 | (2, 8) | COAST | — | 0 | salitre, guano, plata, cobre |
-| carbonera | P 250 | 60 | 1000 | 3 | 80 | (4, 3) | COAST | — | 0 | carbon |
-| estacion | P 200 | 45 | 800 | 3 | 60 | (4, 2) | LAND (vía) | tren | 0 | salitre, plata, cobre |
-| hacienda | P 100 | 45 | 800 | 2 | 50 | (8, 8) | LAND (valle) | — | 0 | — |
-| chacra_oasis | P 60 | 30 | 400 | 1 | 50 | (4, 4) | LAND (oasis) | — | 0 | — |
-| oficina_paradas | P 200 | 60 | 1000 | 2 | 60 | (6, 5) | LAND (salitre) | carreta | 0 | — |
-| oficina_shanks | P 600 | 150 | 2000 | 4 | 60 | (10, 7) | LAND (salitre) | carreta | 0 | — |
-| covadera | P 150 | 60 | 900 | 2 | 60 | (4, 3) | COAST (guano) | — | 0 | guano (propio) |
-| mina_plata | P 300 | 90 | 1000 | 3 | 60 | (4, 4) | LAND (plata) | carreta | 0 | — |
-| mina_cobre | P 250 | 75 | 1000 | 3 | 60 | (4, 4) | LAND (cobre) | carreta | 0 | — |
+| id | cost | build_time | max_hp | armor | vision_range | footprint | placement | trains | pop_provided | drop_off | weapons |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| centro | V 200, P 600 | 180 | 4000 | 5 | 120 | (6, 6) | LAND | operario, carreta | 50 | viveres | — |
+| poblacion | V 50, P 100 | 40 | 600 | 2 | 40 | (4, 4) | LAND | — | 50 | — | — |
+| almacen | P 120 | 30 | 800 | 3 | 60 | (3, 3) | LAND | — | 0 | viveres | — |
+| cuartel | P 200 | 60 | 1500 | 4 | 60 | (6, 4) | LAND | guardia_nacional, infanteria_linea, caballeria, artilleria_campana (+ colorados_bolivia en Bolivia) | 0 | — | — |
+| astillero_chile | P 500 | 120 | 2500 | 5 | 150 | (8, 4) | COAST | transporte, torpedera, corbeta, blindado_bateria_chile | 0 | — | — |
+| astillero_peru | P 500 | 120 | 2500 | 5 | 150 | (8, 4) | COAST | transporte, torpedera, corbeta, monitor_torre_peru | 0 | — | — |
+| agencia_fletes_bolivia | P 250 | 60 | 1200 | 3 | 100 | (4, 3) | COAST | transporte | 0 | — | — |
+| fuerte | V 50, P 400 | 120 | 2500 | 6 | 230 | (5, 5) | LAND | — | 0 | — | canon_costa |
+| muelle | P 250 | 60 | 1500 | 4 | 100 | (2, 8) | COAST | — | 0 | salitre, guano, plata, cobre | — |
+| carbonera | P 250 | 60 | 1000 | 3 | 80 | (4, 3) | COAST | — | 0 | carbon | — |
+| estacion | P 200 | 45 | 800 | 3 | 60 | (4, 2) | LAND (vía) | tren | 0 | salitre, plata, cobre | — |
+| hacienda | P 100 | 45 | 800 | 2 | 50 | (8, 8) | LAND (valle) | — | 0 | — | — |
+| chacra_oasis | P 60 | 30 | 400 | 1 | 50 | (4, 4) | LAND (oasis) | — | 0 | — | — |
+| oficina_paradas | P 200 | 60 | 1000 | 2 | 60 | (6, 5) | LAND (salitre) | carreta | 0 | — | — |
+| oficina_shanks | P 600 | 150 | 2000 | 4 | 60 | (10, 7) | LAND (salitre) | carreta | 0 | — | — |
+| covadera | P 150 | 60 | 900 | 2 | 60 | (4, 3) | COAST (guano) | — | 0 | guano (propio) | — |
+| mina_plata | P 300 | 90 | 1000 | 3 | 60 | (4, 4) | LAND (plata) | carreta | 0 | — | — |
+| mina_cobre | P 250 | 75 | 1000 | 3 | 60 | (4, 4) | LAND (cobre) | carreta | 0 | — | — |
 
 Todos los tiempos son múltiplos de 0,05 s (ADR-006). El astillero se divide en dos `.tres` por facción porque `trains` cambia; también podría ser uno común si FactionDef filtra `trains` por `FactionDef.units` (lo decide el arquitecto).
 
@@ -466,7 +508,7 @@ Todos los tiempos son múltiplos de 0,05 s (ADR-006). El astillero se divide en 
 | `coal_price`, `coal_entry_dir` | FactionDef | float, enum {SUR, OESTE} | §6.1 |
 | `start_resources` | FactionDef (ya existe) | — | §2.1 |
 | Yacimientos | Datos del mapa (T-011) | lista: tipo, posición, sitios, rendimiento | §12.4 |
-| Constantes | Simulación | — | `RITMO` 1,0; tope de edificios 50; radio de bloqueo 400 m; contrato de carbón 150 C / 180 s; entrada a 4000 m; corte de vía 10 s / reparación 15 s |
+| Constantes | Simulación | — | `RITMO` 1,0; tope de edificios 50; radio de bloqueo 400 m; contrato de carbón 150 C / 180 s; entrada a 4000 m; corte de vía 10 s / reparación 15 s; reparar 3 de vida/s por operario, máximo 3, sin daño en 15 s; cimientos con 10 % de vida, reembolso 80 %, autocancelación a 60 s sin obra; asalto a min_range − 5 m; remesa boliviana 300 P + 200 V cada 120 s, entrada a 2400 m, recua a 8 m/s; 2 contratos de carbón por carbonera y por jugador |
 
 ### 12.4 Yacimientos (datos del mapa, a completar con el historiador en T-011) [J]
 
@@ -512,7 +554,7 @@ Todos los tiempos son múltiplos de 0,05 s (ADR-006). El astillero se divide en 
 - **Sin pesos para el carbón:** el contrato espera; no hay deuda.
 - **Shanks sin carbón:** se detiene; sus operarios siguen dentro (el jugador puede desalojarlos). Avisa una vez.
 - **Bloqueo sin bodega libre:** las carretas esperan en el muelle (pueden ser blanco de los cañones del buque).
-- **Varios jugadores en el mismo yacimiento:** cada sitio admite un edificio; el primero que pone los cimientos lo ocupa.
+- **Varios jugadores en el mismo yacimiento:** cada sitio admite un edificio; el primero que pone los cimientos lo ocupa. Bloquearlo con cimientos no es gratis: cancelar devuelve el 80 %, los cimientos se cancelan solos a los 60 s sin obra y nacen con el 10 % de la vida del edificio, así que se pueden destruir (§3.2).
 - **Corte de vía con un tren encima:** el tren se detiene antes del tramo cortado; si el tramo se corta bajo el tren, sigue hasta el final de su vagón y se detiene.
 - **Tope de 50 edificios:** el botón de construir se desactiva con el aviso «Tope de edificios»; los cimientos cuentan.
 - **Tope de pop con porteadores:** entrenar una carreta o un tren requiere pop libre igual que una unidad militar; la cola espera sin cobrar (unidades.md §9).
@@ -543,14 +585,14 @@ Todas las respuestas de Feño coinciden con las opciones que ya usaba este docum
 | La mina de cobre incluye la fundición | Simplificar v1 | Diseño (este documento) |
 | Una carga vale 1 P por unidad para todos los minerales | Legibilidad; la plata vale más por viaje (densidad) | Diseño |
 | Yacimientos infinitos | Partidas de 60–90 min; la producción de 1879 no se agotaba en meses | Diseño |
-| Remesa del altiplano (Q-023) | Bolivia sin recursos dentro del mapa | Diseño; el historiador debe revisar la ruta |
+| Remesa del altiplano (Q-023): la plata y los víveres de fuera de la caja (al este de 67° W) entran como recuas que aparecen a 2400 m del destino boliviano | Bolivia sin recursos dentro del mapa | Diseño (Q-023); el historiador debe revisar la ruta que representa (La Paz y Oruro están dentro de la caja) |
 
 ## 16. Para v2
 
 - **Agua:** aguadas y condensadoras como radio de abasto; fuera de él, desgaste de vida de las tropas (ficha de ejércitos §5). Las condensadoras consumirían carbón.
 - Fundiciones de cobre separadas, ingenios azucareros, construcción de vías nuevas, consumo de carbón al navegar.
 - **Captura de edificios** (Chile explotando las oficinas peruanas tras ocupar Tarapacá).
-- Derechos de exportación como mecánica de facción (Chile cobra 40 centavos por quintal en 1879; recursos-1879 §2.6) en T-031.
+- Derechos de exportación como mecánica de facción (según una sola fuente, Chile cobró 40 centavos por quintal en 1879: dato [P] en recursos-1879 §2.6, a confirmar) en T-031.
 - Víveres importados más baratos para Chile (trigo del valle central), si T-031 lo pide.
 
 ## 17. Decisiones registradas (propuestas, área diseño)
