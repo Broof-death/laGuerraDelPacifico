@@ -98,7 +98,8 @@ func test_rate_limit_30_per_second() -> void:
 
 func test_command_applies_on_next_tick_and_is_logged() -> void:
 	var sim := SimTestHelpers.make_sim()
-	var ids := _spawn_line(sim, 1, 1, 100.0, 100.0)
+	# Mirando ya hacia el destino (+X): no tiene que girar antes de avanzar (T-018).
+	var ids := PackedInt32Array([sim.spawn_entity(0, 1, 100.0, 100.0, PI / 2.0)])
 	var s := sim.store.slot_of(ids[0])
 	sim.submit_command(1, Command.make_move(5, ids, Vector2(200, 100)))
 	# Antes de step() no cambia nada.
@@ -161,8 +162,14 @@ func test_heading_points_to_target() -> void:
 	var sim := SimTestHelpers.make_sim()
 	var ids := _spawn_line(sim, 1, 1, 100.0, 100.0)
 	sim.submit_command(1, Command.make_move(1, ids, Vector2(200, 100)))
+	# Gira a turn_rate (180°/s por defecto: 9° por tick) y no avanza mientras le falten más de 45°.
 	sim.step()
+	assert_float(sim.store.heading[0]).is_equal_approx(deg_to_rad(9.0), 0.0001)
+	assert_float(sim.store.pos_x[0]).is_equal(100.0)
+	for i: int in 9:
+		sim.step()
 	assert_float(sim.store.heading[0]).is_equal_approx(PI / 2.0, 0.0001)
+	assert_float(sim.store.pos_x[0]).is_greater(100.0)
 
 
 func test_stop_halts_movement() -> void:

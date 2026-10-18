@@ -15,3 +15,5 @@ placeholder_label = "ART"
 category = 3
 speed = 3.0
 radius = 1.6
+march_speed = 8.0
+turn_rate = 90.0

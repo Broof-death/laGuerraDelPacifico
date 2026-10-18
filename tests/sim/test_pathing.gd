@@ -200,8 +200,14 @@ func test_unreachable_order_is_rejected_to_the_player() -> void:
 	var sim := SimTestHelpers.make_map_sim()
 	var ship := sim.spawn_entity(1, 1, 600.0, 0.0)
 	assert_int(sim.submit_command(1, Command.make_move(7, PackedInt32Array([ship]), Vector2(-5000.0, 0.0)))).is_equal(Command.Reject.OK)
-	sim.step()
-	var rej := sim.queue.drain_rejections()
+	# Buscar la celda válida más cercana sin encontrarla recorre 64 anillos: con el presupuesto
+	# de trabajo por tick (T-018) puede llevar varios ticks.
+	var rej: Array[PackedInt32Array] = []
+	for t: int in 40:
+		sim.step()
+		rej = sim.queue.drain_rejections()
+		if not rej.is_empty():
+			break
 	assert_int(rej.size()).is_equal(1)
 	assert_array(Array(rej[0])).is_equal([1, 7, Command.Reject.UNREACHABLE])
 	sim.step()
@@ -316,17 +322,35 @@ func test_at_most_8_searches_per_tick() -> void:
 	# 20 órdenes de una unidad (20 rutas) con destinos detrás del cerro (búsqueda real).
 	for i: int in 20:
 		assert_int(sim.submit_command(1, Command.make_move(i + 1, PackedInt32Array([ids[i]]), Vector2(-1000.0, 100.0 + i * 4.0)), 0)).is_equal(Command.Reject.OK)
+	var done: int = 0
+	for t: int in 200:
+		sim.step()
+		# Como mucho 8 búsquedas terminadas por tick y el trabajo dentro del presupuesto (más el
+		# exceso de un paso atómico, que se descuenta del tick siguiente).
+		assert_int(sim.routes.last_searches).is_less_equal(RouteStore.MAX_SEARCHES_PER_TICK)
+		done += sim.routes.last_searches
+		# Las que esperan siguen quietas.
+		for e: int in ids:
+			var s := sim.store.slot_of(e)
+			if sim.store.route[s] != 0 and sim.routes.status[sim.store.route[s]] == RouteStore.Status.PENDING:
+				assert_float(sim.store.vel_x[s]).is_equal(0.0)
+				assert_float(sim.store.pos_x[s]).is_equal(-200.0 + ids.find(e) * 5.0)
+		if sim.routes.pending_count() == 0:
+			break
+	assert_int(done).is_equal(20)
+	assert_int(sim.routes.pending_count()).is_equal(0)
+
+
+func test_max_8_searches_even_with_spare_budget() -> void:
+	var sim := SimTestHelpers.make_map_sim()
+	var ids := PackedInt32Array()
+	for i: int in 20:
+		ids.append(sim.spawn_entity(0, 1, -200.0 + i * 5.0, 300.0))
+	# Destinos en línea recta (búsquedas muy baratas): el tope de 8 por tick manda.
+	for i: int in 20:
+		sim.submit_command(1, Command.make_move(i + 1, PackedInt32Array([ids[i]]), Vector2(-200.0 + i * 5.0, 360.0)), 0)
 	sim.step()
-	assert_int(sim.routes.last_searches).is_equal(RouteStore.MAX_SEARCHES_PER_TICK)
-	assert_int(sim.routes.pending_count()).is_equal(12)
-	# Las que esperan siguen quietas.
-	var waiting: int = 0
-	for e: int in ids:
-		var s := sim.store.slot_of(e)
-		if sim.routes.status[sim.store.route[s]] == RouteStore.Status.PENDING:
-			waiting += 1
-			assert_float(sim.store.vel_x[s]).is_equal(0.0)
-	assert_int(waiting).is_equal(12)
+	assert_int(sim.routes.last_searches).is_equal(8)
 	sim.step()
 	assert_int(sim.routes.last_searches).is_equal(8)
 	sim.step()
@@ -338,7 +362,10 @@ func test_one_route_per_group_not_per_unit() -> void:
 	var sim := SimTestHelpers.make_map_sim()
 	var ids := _spawn_block(sim, 1, 0, 30, -60.0, 60.0)
 	sim.submit_command(1, Command.make_move(1, ids, Vector2(-1000.0, 130.0)))
-	sim.step()
+	for t: int in 20:
+		sim.step()
+		if sim.routes.pending_count() == 0:
+			break
 	assert_int(sim.routes.active_count()).is_equal(1)
 	assert_int(sim.routes.total_searches).is_equal(1)
 	assert_int(sim.groups.active_count()).is_equal(1)
@@ -471,3 +498,93 @@ func test_search_performance() -> void:
 	assert_int(long_sea[0]).is_less(20000)
 	assert_int(long_land[0]).is_less(20000)
 	assert_int(medium[0]).is_less(5000)
+
+
+# --- Presupuesto de rutas por tick (T-018) ---------------------------------------------------------
+
+## Avanza una búsqueda incremental con el presupuesto dado hasta terminarla.
+func _incremental(finder: PathFinder, layer: int, a: Vector2, b: Vector2, budget: int) -> Array:
+	var job := finder.start_job(layer, a.x, a.y, b.x, b.y)
+	var steps: int = 0
+	while not job.is_done():
+		finder.advance(job, budget)
+		steps += 1
+	return [job.res, steps]
+
+
+func test_incremental_search_matches_complete_search() -> void:
+	var cases: Array = [
+		[LAND, TestMapBuilder.LAND_NORTH, TestMapBuilder.LAND_SOUTH],          # larga por tierra (HPA*)
+		[SEA, TestMapBuilder.PORT_NORTH, TestMapBuilder.PORT_SOUTH],           # larga por mar
+		[LAND, Vector2(-800.0, 200.0), Vector2(-560.0, 260.0)],                # corta (A* local)
+		[LAND, Vector2(-100.0, -700.0), Vector2(-800.0, -2400.0)],             # media (bahía)
+		[LAND, Vector2(0.0, 0.0), Vector2(400.0, 0.0)],                        # destino en el mar: ajuste
+		[SEA, Vector2(600.0, 0.0), Vector2(-5000.0, 0.0)],                     # inalcanzable
+		[LAND, Vector2(0.0, 120.0), Vector2(-60.0, 130.0)],                    # recta
+	]
+	for c: Array in cases:
+		var full: PathFinder.Result = PathFinder.new(_map).find(c[0], c[1].x, c[1].y, c[2].x, c[2].y)
+		for budget: int in [1, 37, 500, 1200]:
+			var inc: Array = _incremental(PathFinder.new(_map), c[0], c[1], c[2], budget)
+			var res: PathFinder.Result = inc[0]
+			assert_bool(res.ok).is_equal(full.ok)
+			assert_int(res.reason).is_equal(full.reason)
+			assert_bool(res.adjusted).is_equal(full.adjusted)
+			assert_int(res.kind).is_equal(full.kind)
+			assert_array(Array(res.points)).is_equal(Array(full.points))
+			assert_int(res.abstract_expanded).is_equal(full.abstract_expanded)
+	# Una búsqueda larga con presupuesto chico se reparte en muchos pasos.
+	var long: Array = _incremental(PathFinder.new(_map), LAND, TestMapBuilder.LAND_NORTH, TestMapBuilder.LAND_SOUTH, RouteStore.WORK_PER_TICK)
+	assert_int(long[1]).is_greater(3)
+
+
+func test_eight_long_routes_in_one_tick_respect_the_work_budget() -> void:
+	var sim := SimTestHelpers.make_map_sim()
+	var squads: Array[PackedInt32Array] = []
+	for k: int in 8:
+		var base := Vector2(-11500.0 + k * 300.0, TestMapBuilder.LAND_NORTH.y)
+		while not _map.passable_at(LAND, base.x, base.y):
+			base.y += 50.0
+		squads.append(_spawn_block(sim, 1, 0, 8, base.x, base.y))
+	for k: int in 8:
+		sim.submit_command(1, Command.make_move(k + 1, squads[k], Vector2(-11500.0 + k * 300.0, TestMapBuilder.LAND_SOUTH.y)), 0)
+	var ticks: int = 0
+	var max_work: int = 0
+	var debt_ok: bool = true
+	for t: int in 400:
+		sim.step()
+		ticks += 1
+		max_work = maxi(max_work, sim.routes.last_work)
+		if sim.routes.last_work > RouteStore.WORK_PER_TICK * 3:
+			debt_ok = false
+		if sim.routes.pending_count() == 0:
+			break
+	assert_int(sim.routes.pending_count()).is_equal(0)
+	assert_bool(debt_ok).is_true()
+	# Las 8 búsquedas (~30 km cada una) se repartieron en varios ticks.
+	assert_int(ticks).is_greater(8)
+	for k: int in 8:
+		var s := sim.store.slot_of(squads[k][0])
+		var r: int = sim.store.route[s]
+		assert_int(r).is_not_equal(0)
+		assert_int(sim.routes.status[r]).is_equal(RouteStore.Status.READY)
+		var res := PathFinder.new(_map).find(LAND, sim.routes.start_x[r], sim.routes.start_z[r], sim.routes.goal_x[r], sim.routes.goal_z[r])
+		assert_array(Array(sim.routes.points[r])).is_equal(Array(res.points))
+		assert_float(res.length_from(sim.routes.start_x[r], sim.routes.start_z[r])).is_greater(30000.0)
+	print("PATH_BUDGET 8 rutas largas listas en %d ticks; trabajo máx. por tick %d (presupuesto %d)" % [ticks, max_work, RouteStore.WORK_PER_TICK])
+
+
+func test_route_scheduling_is_deterministic() -> void:
+	var finished := []
+	for run: int in 2:
+		var sim := SimTestHelpers.make_map_sim(5)
+		var ticks_ready := PackedInt32Array()
+		for k: int in 6:
+			var ids := _spawn_block(sim, 1, 0, 3, -2000.0 - k * 200.0, -3000.0)
+			sim.submit_command(1, Command.make_move(k + 1, ids, Vector2(-1500.0 + k * 100.0, 3000.0)), 0)
+		for t: int in 300:
+			sim.step()
+			for n: int in sim.routes.last_searches:
+				ticks_ready.append(t)
+		finished.append(ticks_ready)
+	assert_array(Array(finished[0])).is_equal(Array(finished[1]))

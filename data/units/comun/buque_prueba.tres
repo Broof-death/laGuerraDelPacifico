@@ -18,3 +18,4 @@ speed = 6.0
 turn_rate = 20.0
 radius = 12.0
 pop_cost = 4
+march_speed = 15.0

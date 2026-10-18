@@ -50,6 +50,12 @@ var vel_z: PackedFloat32Array = PackedFloat32Array()
 var hp: PackedFloat32Array = PackedFloat32Array()
 var cooldown: PackedFloat32Array = PackedFloat32Array()
 var progress: PackedFloat32Array = PackedFloat32Array()
+## Rapidez actual del movimiento (m/s), con la rampa entre el régimen táctico y el de marcha (T-018).
+var speed_cur: PackedFloat32Array = PackedFloat32Array()
+## Ticks seguidos sin avanzar hacia su objetivo inmediato (atascos por la evitación, T-018).
+var stuck: PackedInt32Array = PackedInt32Array()
+## Distancia al objetivo inmediato en el tick anterior (para detectar atascos).
+var wp_dist: PackedFloat32Array = PackedFloat32Array()
 
 ## id -> slot (-1 si la entidad no existe o murió). Índice 0 reservado (NO_ENTITY).
 var id_to_slot: PackedInt32Array = PackedInt32Array([-1])
@@ -90,6 +96,9 @@ func spawn(p_def_index: int, p_owner: int, x: float, z: float, p_heading: float,
 	hp[s] = p_hp
 	cooldown[s] = 0.0
 	progress[s] = 0.0
+	speed_cur[s] = 0.0
+	stuck[s] = 0
+	wp_dist[s] = 0.0
 	id_to_slot.append(s)
 	return new_id
 
@@ -123,6 +132,9 @@ func remove(entity_id: int) -> bool:
 		hp[s] = hp[last]
 		cooldown[s] = cooldown[last]
 		progress[s] = progress[last]
+		speed_cur[s] = speed_cur[last]
+		stuck[s] = stuck[last]
+		wp_dist[s] = wp_dist[last]
 		id_to_slot[id[s]] = s
 	id_to_slot[entity_id] = -1
 	count = last
@@ -168,3 +180,6 @@ func _grow(new_capacity: int) -> void:
 	hp.resize(new_capacity)
 	cooldown.resize(new_capacity)
 	progress.resize(new_capacity)
+	speed_cur.resize(new_capacity)
+	stuck.resize(new_capacity)
+	wp_dist.resize(new_capacity)

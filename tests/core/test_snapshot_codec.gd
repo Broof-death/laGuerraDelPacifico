@@ -420,7 +420,8 @@ func test_velocity_roundtrip() -> void:
 	for s: int in sim.store.count:
 		ids.append(sim.store.id[s])
 	sim.submit_command(1, Command.make_move(1, ids, Vector2(1200.0, 1000.0)))
-	_step(sim, 2)
+	# Primero giran hacia el destino (turn_rate, T-018) y después avanzan.
+	_step(sim, 12)
 	var tx := SnapshotSender.new(1)
 	var rx := SnapshotReceiver.new()
 	var cs := ClientState.new()
@@ -477,12 +478,22 @@ func test_direction_change_forces_send() -> void:
 	_step(sim, 2)
 	tx.on_ack(_deliver(rx, tx.build(_capture(sim), 0)), sim.tick)
 	assert_int(tx.last_records).is_equal(0)
-	# Gira 90°: el siguiente snapshot la reancla aunque el error todavía sea chico.
+	# Gira 90°: primero gira en el lugar (turn_rate, T-018) y el siguiente snapshot la reancla
+	# detenida aunque el error todavía sea chico.
 	sim.submit_command(1, Command.make_move(2, PackedInt32Array([id]), Vector2(sim.store.pos_x[0], 1200.0)))
 	_step(sim, 2)
 	var pk := tx.build(_capture(sim), 0)
 	assert_int(tx.last_records).is_equal(1)
 	var part := SnapshotCodec.decode_part(pk[0], tx.get_state(tx.base_tick))
+	assert_int(part.rec_ref[0]).is_equal(sim.tick)
+	assert_int(SnapshotCodec.vel_x8(part.rec_vel[0])).is_equal(0)
+	assert_int(SnapshotCodec.vel_z8(part.rec_vel[0])).is_equal(0)
+	tx.on_ack(_deliver(rx, pk), sim.tick)
+	# Cuando termina de girar sale hacia +Z: otra vez se reancla, ahora con la velocidad nueva.
+	_step(sim, 8)
+	pk = tx.build(_capture(sim), 0)
+	assert_int(tx.last_records).is_equal(1)
+	part = SnapshotCodec.decode_part(pk[0], tx.get_state(tx.base_tick))
 	assert_int(part.rec_ref[0]).is_equal(sim.tick)
 	assert_int(SnapshotCodec.vel_z8(part.rec_vel[0])).is_equal(SnapshotCodec.quantize_vel(5.0))
 	# Y al detenerse también.

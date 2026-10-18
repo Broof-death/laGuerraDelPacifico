@@ -14,3 +14,5 @@ placeholder_label = "CAB"
 category = 2
 speed = 8.0
 radius = 1.4
+march_speed = 14.0
+turn_rate = 270.0
