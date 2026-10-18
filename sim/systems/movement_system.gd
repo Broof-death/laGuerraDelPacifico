@@ -14,6 +14,10 @@ extends RefCounted
 ## - Al llegar al destino, la entidad queda en IDLE y suelta su grupo y su ruta.
 ## Pendiente: giro progresivo con turn_rate, formaciones y evitación local (T-018).
 
+## way_index: índice del punto de paso en los bits bajos; RAW = sigue la ruta sin desplazamiento.
+const RAW: int = 1 << 24
+const INDEX_MASK: int = RAW - 1
+
 
 ## Recorre los slots [0, store.count). speed_by_def: velocidad en m/s por def_index; layer_by_def:
 ## Terrain.Layer por def_index. `map` puede ser null (sin terreno: todo transitable).
@@ -93,12 +97,15 @@ static func run(store: EntityStore, groups: MoveGroups, routes: RouteStore, map:
 					elif ngz != ogz and table[map.cell_byte(ogx, ngz)] > 0.0:
 						nx = ox
 					else:
-						halt(store, groups, routes, s)
+						# Sin salida: si iba a un punto desplazado (formación), pasa al punto de
+						# la ruta tal cual; si ya iba ahí, se detiene.
+						if not _fall_back_to_route(store, routes, s, r):
+							halt(store, groups, routes, s)
 						continue
 		px[s] = nx
 		pz[s] = nz
 		if arrived:
-			if r != 0 and way[s] < routes.point_count(r) - 1:
+			if r != 0 and (way[s] & INDEX_MASK) < routes.point_count(r) - 1:
 				# Punto de paso intermedio: pasa al siguiente sin detenerse.
 				way[s] += 1
 				_set_target(store, routes, map, layer_by_def[defs[s]], s, r)
@@ -128,6 +135,32 @@ static func halt(store: EntityStore, groups: MoveGroups, routes: RouteStore, s: 
 	store.way_index[s] = -1
 
 
+## Cambia el objetivo inmediato desplazado por el punto de la ruta sin desplazar (o el destino
+## propio por el del grupo) y sigue la ruta sin desplazamiento. Devuelve false si ya apuntaba ahí.
+static func _fall_back_to_route(store: EntityStore, routes: RouteStore, s: int, r: int) -> bool:
+	if r == 0 or store.way_index[s] < 0:
+		return false
+	var i: int = store.way_index[s] & INDEX_MASK
+	var x: float
+	var z: float
+	if i >= routes.point_count(r) - 1:
+		x = routes.final_x[r]
+		z = routes.final_z[r]
+		store.dest_x[s] = x
+		store.dest_z[s] = z
+	else:
+		x = routes.points[r][i * 2]
+		z = routes.points[r][i * 2 + 1]
+	if store.wp_x[s] == x and store.wp_z[s] == z:
+		return false
+	store.way_index[s] = i | RAW
+	store.wp_x[s] = x
+	store.wp_z[s] = z
+	store.vel_x[s] = 0.0
+	store.vel_z[s] = 0.0
+	return true
+
+
 ## La ruta está lista: corre el destino de la unidad con el ajuste del destino del grupo y apunta
 ## al primer punto de paso.
 static func _begin_route(store: EntityStore, routes: RouteStore, map: LogicMap, layer: int, s: int, r: int) -> void:
@@ -140,19 +173,57 @@ static func _begin_route(store: EntityStore, routes: RouteStore, map: LogicMap, 
 	_set_target(store, routes, map, layer, s, r)
 
 
-## Objetivo inmediato para el punto de paso way_index[s].
+## Objetivo inmediato para el punto de paso way_index[s] (desde la posición actual P):
+## - Tramo intermedio i: el punto de la ruta desplazado por el puesto de la unidad, si el segmento
+##   P -> punto desplazado es transitable; si no, el punto de la ruta tal cual (y desde ahí sigue
+##   la ruta sin desplazamiento, "modo RAW"); si tampoco se llega en línea recta, vuelve primero al
+##   punto de ruta anterior (desde el que el tramo de la ruta es transitable por construcción).
+## - Último tramo: su puesto; si no se llega en línea recta, el destino del grupo; si tampoco,
+##   vuelve al punto de ruta anterior.
+## Con desplazamiento nulo (órdenes de menos de 8 unidades) y P en la ruta, no hace falta revisar.
 static func _set_target(store: EntityStore, routes: RouteStore, map: LogicMap, layer: int, s: int, r: int) -> void:
-	var i: int = store.way_index[s]
+	var w: int = store.way_index[s]
+	var raw: bool = (w & RAW) != 0
+	var i: int = w & INDEX_MASK
 	var count: int = routes.point_count(r)
-	if i >= count - 1:
-		store.wp_x[s] = store.dest_x[s]
-		store.wp_z[s] = store.dest_z[s]
-		return
 	var pts: PackedFloat64Array = routes.points[r]
-	var x: float = pts[i * 2] + (store.dest_x[s] - routes.final_x[r])
-	var z: float = pts[i * 2 + 1] + (store.dest_z[s] - routes.final_z[r])
-	if map != null and not map.passable_at(layer, x, z):
-		x = pts[i * 2]
-		z = pts[i * 2 + 1]
-	store.wp_x[s] = x
-	store.wp_z[s] = z
+	var px: float = store.pos_x[s]
+	var pz: float = store.pos_z[s]
+	var off_x: float = store.dest_x[s] - routes.final_x[r]
+	var off_z: float = store.dest_z[s] - routes.final_z[r]
+	var no_offset: bool = absf(off_x) < 0.001 and absf(off_z) < 0.001
+	if i >= count - 1:
+		if map == null or (no_offset and (raw or i > 0)) 				or map.segment_passable(layer, px, pz, store.dest_x[s], store.dest_z[s]):
+			store.wp_x[s] = store.dest_x[s]
+			store.wp_z[s] = store.dest_z[s]
+			return
+		if map.segment_passable(layer, px, pz, routes.final_x[r], routes.final_z[r]) or i == 0:
+			store.dest_x[s] = routes.final_x[r]
+			store.dest_z[s] = routes.final_z[r]
+			store.wp_x[s] = store.dest_x[s]
+			store.wp_z[s] = store.dest_z[s]
+			return
+		_back_to(store, pts, s, i - 1)
+		return
+	var rx: float = pts[i * 2]
+	var rz: float = pts[i * 2 + 1]
+	if not raw and not no_offset:
+		var tx: float = rx + off_x
+		var tz: float = rz + off_z
+		if map == null or (map.passable_at(layer, tx, tz) and map.segment_passable(layer, px, pz, tx, tz)):
+			store.wp_x[s] = tx
+			store.wp_z[s] = tz
+			return
+	if map == null or ((raw or no_offset) and i > 0) or i == 0 or map.segment_passable(layer, px, pz, rx, rz):
+		store.way_index[s] = i | RAW
+		store.wp_x[s] = rx
+		store.wp_z[s] = rz
+		return
+	_back_to(store, pts, s, i - 1)
+
+
+## Vuelve al punto de ruta j (sin desplazamiento): desde ahí el siguiente tramo es transitable.
+static func _back_to(store: EntityStore, pts: PackedFloat64Array, s: int, j: int) -> void:
+	store.way_index[s] = j | RAW
+	store.wp_x[s] = pts[j * 2]
+	store.wp_z[s] = pts[j * 2 + 1]

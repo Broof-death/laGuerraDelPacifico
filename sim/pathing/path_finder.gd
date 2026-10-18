@@ -19,6 +19,13 @@ extends RefCounted
 const SNAP_RADIUS_CELLS: int = 64
 const DIRECT_MAX: float = 4096.0
 const SMOOTH_MAX: float = 2048.0
+## Holgura lateral del suavizado: un atajo solo se toma si también son transitables los dos
+## segmentos paralelos a esta distancia (las unidades siguen la ruta con su desplazamiento de
+## formación y no deben rozar el terreno prohibido).
+const CLEARANCE: float = 6.0
+## Peso de la heurística del A* abstracto por capa (A* ponderado: expande muchos menos nodos en
+## rutas largas a cambio de rutas algo menos óptimas, que el suavizado corrige en parte).
+const ABSTRACT_HEURISTIC: PackedFloat32Array = [1.25, 1.25]
 
 enum Kind { NONE, DIRECT, LOCAL, HPA }
 
@@ -36,6 +43,9 @@ class Result:
 	## Nodos abstractos expandidos (HPA*) y celdas expandidas en búsquedas locales.
 	var abstract_expanded: int = 0
 	var local_expanded: int = 0
+	## Tiempos parciales (µs): A* abstracto y suavizado.
+	var usec_abstract: int = 0
+	var usec_smooth: int = 0
 
 	func length_from(sx: float, sz: float) -> float:
 		var total: float = 0.0
@@ -90,7 +100,7 @@ func find(layer: int, sx: float, sz: float, tx: float, tz: float) -> Result:
 		res.adjusted = true
 	res.goal = goal
 	# 2) Recta.
-	if start.distance_to(goal) <= DIRECT_MAX and map.segment_passable(layer, start.x, start.y, goal.x, goal.y):
+	if start.distance_to(goal) <= DIRECT_MAX and _seg(layer, start.x, start.y, goal.x, goal.y):
 		res.ok = true
 		res.kind = Kind.DIRECT
 		if start != Vector2(sx, sz):
@@ -115,7 +125,9 @@ func find(layer: int, sx: float, sz: float, tx: float, tz: float) -> Result:
 		if graph == null:
 			res.reason = Command.Reject.UNREACHABLE
 			return res
+		var ta: int = Time.get_ticks_usec()
 		var abstract := _abstract_path(layer, graph, s_cell, g_cell, res)
+		res.usec_abstract = Time.get_ticks_usec() - ta
 		if abstract.is_empty():
 			res.reason = Command.Reject.UNREACHABLE
 			return res
@@ -129,7 +141,7 @@ func find(layer: int, sx: float, sz: float, tx: float, tz: float) -> Result:
 		for i: int in chain.size():
 			var cell: Vector2i = chain[i]
 			var pt: Vector2 = goal if i == chain.size() - 1 else _center(cell)
-			if not map.segment_passable(layer, prev_pt.x, prev_pt.y, pt.x, pt.y):
+			if not _seg(layer, prev_pt.x, prev_pt.y, pt.x, pt.y):
 				var c: int = PathGraph.cluster_of_cell(prev_cell.x, prev_cell.y)
 				if c == PathGraph.cluster_of_cell(cell.x, cell.y):
 					var local := _local_path(layer, c, prev_cell, cell)
@@ -142,7 +154,9 @@ func find(layer: int, sx: float, sz: float, tx: float, tz: float) -> Result:
 			prev_pt = pt
 	pts.append(goal)
 	# 5) Suavizado.
+	var tsm: int = Time.get_ticks_usec()
 	var smooth := _string_pull(layer, pts)
+	res.usec_smooth = Time.get_ticks_usec() - tsm
 	res.ok = true
 	for i: int in range(1, smooth.size()):
 		res.points.append_array([smooth[i].x, smooth[i].y])
@@ -209,7 +223,7 @@ func _local_path(layer: int, c: int, a: Vector2i, b: Vector2i) -> Array[Vector2i
 	var cc: int = MapGrid.CLUSTER_CELLS
 	var ox: int = (c % MapGrid.CLUSTERS_PER_SIDE) * cc
 	var oz: int = (c / MapGrid.CLUSTERS_PER_SIDE) * cc
-	var costs := map.region_costs(layer, ox, oz, cc, cc)
+	var costs := map.region_costs_safe(layer, ox, oz, cc, cc)
 	var path := GridSearch.astar(costs, cc, cc, (a.y - oz) * cc + (a.x - ox), (b.y - oz) * cc + (b.x - ox), Terrain.MIN_COST[layer])
 	var out: Array[Vector2i] = []
 	for li: int in path:
@@ -259,10 +273,27 @@ func _connect(layer: int, graph: PathGraph, cell: Vector2i) -> Array:
 			nodes.append(v)
 			costs.append(GridSearch.octile(nc % LogicMap.SIDE - cell.x, nc / LogicMap.SIDE - cell.y) * k)
 		return [nodes, costs]
+	# Atajo: si se ven TODOS los nodos del cluster en línea recta, su costo es el largo por el costo
+	# de la celda y no hace falta el Dijkstra local.
+	var k0: float = map.cell_cost(layer, cell.x, cell.y)
+	var cx0: float = MapGrid.terrain_center(cell.x)
+	var cz0: float = MapGrid.terrain_center(cell.y)
+	for v: int in range(r.x, r.y):
+		var nc: int = graph.node_cell[v]
+		var nx: float = MapGrid.terrain_center(nc % LogicMap.SIDE)
+		var nz: float = MapGrid.terrain_center(nc / LogicMap.SIDE)
+		if not map.segment_passable(layer, cx0, cz0, nx, nz):
+			nodes.clear()
+			costs.clear()
+			break
+		nodes.append(v)
+		costs.append(Vector2(nx - cx0, nz - cz0).length() * k0)
+	if not nodes.is_empty():
+		return [nodes, costs]
 	var cc: int = MapGrid.CLUSTER_CELLS
 	var ox: int = (c % MapGrid.CLUSTERS_PER_SIDE) * cc
 	var oz: int = (c / MapGrid.CLUSTERS_PER_SIDE) * cc
-	var region := map.region_costs(layer, ox, oz, cc, cc)
+	var region := map.region_costs_safe(layer, ox, oz, cc, cc)
 	var targets := PackedInt32Array()
 	for v: int in range(r.x, r.y):
 		var nc: int = graph.node_cell[v]
@@ -306,7 +337,7 @@ func _abstract_path(layer: int, graph: PathGraph, s_cell: Vector2i, g_cell: Vect
 	var tg_costs: PackedFloat32Array = to_g[1]
 	for i: int in tg_nodes.size():
 		goal_extra[tg_nodes[i]] = tg_costs[i]
-	var hk: float = Terrain.MIN_COST[layer]
+	var hk: float = ABSTRACT_HEURISTIC[layer]
 	var heap := PackedInt64Array()
 	g[S] = 0.0
 	seen[S] = stamp
@@ -368,8 +399,86 @@ func _abstract_path(layer: int, graph: PathGraph, s_cell: Vector2i, g_cell: Vect
 	return out
 
 
-## String pulling: desde cada punto, salta al más lejano visible (segmento transitable) sin pasar
-## de SMOOTH_MAX metros.
+## Segmento transitable con holgura lateral CLEARANCE a ambos lados.
+func _wide_passable(layer: int, a: Vector2, b: Vector2) -> bool:
+	if not _seg(layer, a.x, a.y, b.x, b.y):
+		return false
+	var d := b - a
+	if d.length_squared() < 0.0001:
+		return true
+	var n := Vector2(-d.y, d.x).normalized() * CLEARANCE
+	if not _seg(layer, a.x + n.x, a.y + n.y, b.x + n.x, b.y + n.y):
+		return false
+	return _seg(layer, a.x - n.x, a.y - n.y, b.x - n.x, b.y - n.y)
+
+
+## Segmento transitable (supercover de 16 m). Atajo: si todos los clusters de 512 m que toca son
+## OPEN para la capa (todo transitable), no hace falta recorrer las celdas.
+func _seg(layer: int, ax: float, az: float, bx: float, bz: float) -> bool:
+	var graph: PathGraph = map.graph(layer)
+	if graph != null and _clusters_open(graph, ax, az, bx, bz):
+		return true
+	return map.segment_passable(layer, ax, az, bx, bz)
+
+
+## true si todos los clusters que toca el segmento (supercover sobre la rejilla de 512 m) son OPEN.
+static func _clusters_open(graph: PathGraph, ax: float, az: float, bx: float, bz: float) -> bool:
+	var states := graph.cluster_state
+	const SIDE: int = MapGrid.CLUSTERS_PER_SIDE
+	var inv: float = 1.0 / MapGrid.CLUSTER
+	var fx0: float = (ax + MapGrid.MAP_HALF) * inv
+	var fz0: float = (az + MapGrid.MAP_HALF) * inv
+	var fx1: float = (bx + MapGrid.MAP_HALF) * inv
+	var fz1: float = (bz + MapGrid.MAP_HALF) * inv
+	var cx: int = int(floor(fx0))
+	var cz: int = int(floor(fz0))
+	var cx1: int = int(floor(fx1))
+	var cz1: int = int(floor(fz1))
+	if cx < 0 or cz < 0 or cx >= SIDE or cz >= SIDE or cx1 < 0 or cz1 < 0 or cx1 >= SIDE or cz1 >= SIDE:
+		return false
+	if states[cz * SIDE + cx] != PathGraph.ClusterState.OPEN:
+		return false
+	var dx: float = fx1 - fx0
+	var dz: float = fz1 - fz0
+	var sx: int = 1 if dx > 0.0 else -1
+	var sz: int = 1 if dz > 0.0 else -1
+	var tdx: float = INF if dx == 0.0 else absf(1.0 / dx)
+	var tdz: float = INF if dz == 0.0 else absf(1.0 / dz)
+	var tmx: float = INF
+	if dx > 0.0:
+		tmx = (cx + 1 - fx0) / dx
+	elif dx < 0.0:
+		tmx = (fx0 - cx) / -dx
+	var tmz: float = INF
+	if dz > 0.0:
+		tmz = (cz + 1 - fz0) / dz
+	elif dz < 0.0:
+		tmz = (fz0 - cz) / -dz
+	var steps: int = absi(cx1 - cx) + absi(cz1 - cz)
+	while steps > 0 and (cx != cx1 or cz != cz1):
+		if absf(tmx - tmz) < 1e-9:
+			if states[cz * SIDE + cx + sx] != PathGraph.ClusterState.OPEN or states[(cz + sz) * SIDE + cx] != PathGraph.ClusterState.OPEN:
+				return false
+			cx += sx
+			cz += sz
+			tmx += tdx
+			tmz += tdz
+			steps -= 2
+		elif tmx < tmz:
+			cx += sx
+			tmx += tdx
+			steps -= 1
+		else:
+			cz += sz
+			tmz += tdz
+			steps -= 1
+		if states[cz * SIDE + cx] != PathGraph.ClusterState.OPEN:
+			return false
+	return true
+
+
+## String pulling: desde cada punto, salta al más lejano visible (segmento transitable con
+## holgura) sin pasar de SMOOTH_MAX metros.
 func _string_pull(layer: int, pts: PackedVector2Array) -> PackedVector2Array:
 	var out := PackedVector2Array([pts[0]])
 	var last: int = pts.size() - 1
@@ -378,7 +487,7 @@ func _string_pull(layer: int, pts: PackedVector2Array) -> PackedVector2Array:
 		var best: int = i + 1
 		var j: int = i + 2
 		while j <= last and pts[i].distance_to(pts[j]) <= SMOOTH_MAX:
-			if map.segment_passable(layer, pts[i].x, pts[i].y, pts[j].x, pts[j].y):
+			if _wide_passable(layer, pts[i], pts[j]):
 				best = j
 			elif j - best > 3:
 				break  # ya no se ve desde hace varios puntos: no seguir buscando

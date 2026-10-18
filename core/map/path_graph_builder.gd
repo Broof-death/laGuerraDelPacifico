@@ -163,7 +163,8 @@ static func build(map: LogicMap, layer: int, cluster_rect: Rect2i = Rect2i()) ->
 					e_to.append(a)
 					e_cost.append(d)
 		else:
-			var costs: PackedFloat32Array = mixed_costs[c]
+			# Los costos internos usan la penalización junto a lo prohibido (como PathFinder).
+			var costs := map.region_costs_safe(layer, ox, oz, cc, cc)
 			var locals := PackedInt32Array()
 			for v: int in nodes:
 				locals.append((cells[v] / LogicMap.SIDE - oz) * cc + (cells[v] % LogicMap.SIDE - ox))

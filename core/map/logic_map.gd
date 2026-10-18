@@ -157,6 +157,35 @@ func region_costs(layer: int, gx0: int, gz0: int, w: int, h: int) -> PackedFloat
 	return out
 
 
+## Como region_costs, pero las celdas transitables que tocan (8 vecinos) una celda prohibida
+## cuestan NEAR_BLOCKED_PENALTY veces más: las rutas se separan de la costa y de los obstáculos
+## cuando hay lugar, y las unidades que las siguen con su desplazamiento de formación no rozan el
+## terreno prohibido. Es la que usan las búsquedas (grafo del HPA* y A* locales).
+const NEAR_BLOCKED_PENALTY: float = 2.0
+
+
+func region_costs_safe(layer: int, gx0: int, gz0: int, w: int, h: int) -> PackedFloat32Array:
+	var wide := region_costs(layer, gx0 - 1, gz0 - 1, w + 2, h + 2)
+	var ww: int = w + 2
+	var out := PackedFloat32Array()
+	out.resize(w * h)
+	var i: int = 0
+	for z: int in h:
+		var row: int = (z + 1) * ww
+		for x: int in w:
+			var c: float = wide[row + x + 1]
+			if c > 0.0:
+				var up: int = row - ww + x
+				var down: int = row + ww + x
+				if wide[up] <= 0.0 or wide[up + 1] <= 0.0 or wide[up + 2] <= 0.0 \
+						or wide[row + x] <= 0.0 or wide[row + x + 2] <= 0.0 \
+						or wide[down] <= 0.0 or wide[down + 1] <= 0.0 or wide[down + 2] <= 0.0:
+					c *= NEAR_BLOCKED_PENALTY
+			out[i] = c
+			i += 1
+	return out
+
+
 ## true si el segmento recto de (ax, az) a (bx, bz) solo pasa por celdas transitables de la capa.
 ## Recorre TODAS las celdas que toca el segmento (supercover): si pasa justo por una esquina,
 ## exige las dos celdas laterales. Así un segmento aceptado nunca roza una celda prohibida.
@@ -190,6 +219,10 @@ func segment_passable(layer: int, ax: float, az: float, bx: float, bz: float) ->
 	elif dz < 0.0:
 		tmz = (fz0 - gz) / -dz
 	var steps: int = absi(gx1 - gx) + absi(gz1 - gz)
+	# Caché del sector actual (la consulta de cada celda va en línea: es el bucle caliente).
+	var cur_sec: int = -1
+	var cur_arr: PackedByteArray
+	var cur_uniform: float = 0.0
 	while steps > 0 and (gx != gx1 or gz != gz1):
 		if absf(tmx - tmz) < 1e-9:
 			# Esquina exacta: las dos celdas laterales también cuentan.
@@ -208,7 +241,17 @@ func segment_passable(layer: int, ax: float, az: float, bx: float, bz: float) ->
 			gz += sz
 			tmz += tdz
 			steps -= 1
-		if table[cell_byte(gx, gz)] <= 0.0:
+		if gx < 0 or gz < 0 or gx >= SIDE or gz >= SIDE:
+			return false
+		var sec: int = (gz >> 8) * SECTORS + (gx >> 8)
+		if sec != cur_sec:
+			cur_sec = sec
+			cur_arr = _cells[sec]
+			cur_uniform = table[_uniform_kind[sec]]
+		if cur_arr.is_empty():
+			if cur_uniform <= 0.0:
+				return false
+		elif table[cur_arr[((gz & 255) << 8) | (gx & 255)]] <= 0.0:
 			return false
 	return true
 
