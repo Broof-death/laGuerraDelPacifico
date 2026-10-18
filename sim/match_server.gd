@@ -41,6 +41,8 @@ var manual_msec: int = -1
 ## Si es true, se mide el armado de snapshots en last_snapshot_usec.
 var profiling: bool = false
 var last_snapshot_usec: int = 0
+## Tiempo de la última captura del mundo (SnapshotWorld.capture), si profiling.
+var last_capture_usec: int = 0
 var world := SnapshotWorld.new()
 
 var _catalog_hash: int
@@ -142,6 +144,8 @@ func _send_snapshots() -> void:
 	var t0: int = Time.get_ticks_usec() if profiling else 0
 	if phase == 0:
 		world.capture(sim)
+		if profiling:
+			last_capture_usec = Time.get_ticks_usec() - t0
 	if world.tick < 0:
 		return
 	for c: Conn in _conns:

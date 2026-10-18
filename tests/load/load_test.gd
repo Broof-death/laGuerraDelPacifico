@@ -83,6 +83,13 @@ var _long_ready_ticks := PackedInt32Array()
 var _long_tick_usec := PackedInt64Array()
 const LONG_ROUTES_TICK: int = 200
 const LONG_SQUAD_UNITS: int = 8
+## Por tick medido: [tick, total, snapshots, sistemas...] (para ver los peores ticks).
+var _tick_log: Array = []
+## Por snapshot de cada cliente: tiempo de mezcla, selección, codificación y estado, y candidatos.
+var _snap_phase: Array[PackedInt64Array] = [PackedInt64Array(), PackedInt64Array(), PackedInt64Array(), PackedInt64Array()]
+var _snap_cand := PackedInt64Array()
+var _capture_usec := PackedInt64Array()
+var _snap_skip := PackedInt64Array()
 ## Tiempo de movimiento + evitación de cada tick medido (µs).
 var _move_avoid_usec := PackedInt64Array()
 
@@ -196,6 +203,9 @@ func _ready() -> void:
 			snap_usec.append(_server.last_snapshot_usec)
 			for i: int in Simulation.SystemId.COUNT:
 				sys_usec[i].append(_sim.last_system_usec[i])
+			_tick_log.append([t, dt, _server.last_snapshot_usec] + Array(_sim.last_system_usec))
+			if t % SimConstants.SNAPSHOT_EVERY_TICKS == SimConstants.SNAPSHOT_EVERY_TICKS - 1:
+				_capture_usec.append(_server.last_capture_usec)
 			_move_avoid_usec.append(_sim.last_system_usec[Simulation.SystemId.MOVEMENT] + _sim.last_system_usec[Simulation.SystemId.AVOIDANCE])
 		if _long_issue_tick >= 0:
 			_track_long_routes(t, dt)
@@ -212,6 +222,10 @@ func _ready() -> void:
 				if conn.sender.last_max_combat_age > 6 and _late_ticks.size() < 40:
 					_late_ticks.append(t)
 				snap_deferred.append(conn.sender.last_deferred)
+				for k: int in 4:
+					_snap_phase[k].append(conn.sender.last_phase_usec[k])
+				_snap_cand.append(conn.sender.last_record_count)
+				_snap_skip.append(conn.sender.last_skipped)
 				max_packet = maxi(max_packet, conn.sender.last_max_packet_bytes)
 				cap_cuts += conn.sender.last_cap_cuts
 		if sync_tick < 0 and not _ghosts.is_empty():
@@ -254,6 +268,10 @@ func _ready() -> void:
 		"map": map != null,
 		"path_stress": _path_stress,
 		"movement_plus_avoidance_ms": _stats_ms(_move_avoid_usec),
+		"worst_ticks": _worst_ticks(5),
+		"snapshot_phase_ms_per_client": {"merge": _stats_ms(_snap_phase[0]), "select": _stats_ms(_snap_phase[1]),
+			"encode": _stats_ms(_snap_phase[2]), "store": _stats_ms(_snap_phase[3]), "candidates": _stats_int(_snap_cand),
+			"capture_per_cycle": _stats_ms(_capture_usec), "merge_skipped": _stats_int(_snap_skip)},
 		"long_routes": _long_result(),
 		"path_searches": _sim.routes.total_searches,
 		"path_search_ms": _stats_ms(_path_usec),
@@ -372,6 +390,20 @@ func _track_long_routes(t: int, tick_usec: int) -> void:
 			pending = true
 	if pending or _long_tick_usec.size() < 5:
 		_long_tick_usec.append(tick_usec)
+
+
+## Los n ticks más lentos con su reparto (ms): tick, total, snapshots y cada sistema.
+func _worst_ticks(n: int) -> Array:
+	var sorted: Array = _tick_log.duplicate()
+	sorted.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1])
+	var out: Array = []
+	for i: int in mini(n, sorted.size()):
+		var row: Array = sorted[i]
+		var d := {"tick": row[0], "total": _ms(row[1]), "snapshots": _ms(row[2])}
+		for k: int in Simulation.SystemId.COUNT:
+			d[Simulation.SYSTEM_NAMES[k]] = _ms(row[3 + k])
+		out.append(d)
+	return out
 
 
 func _long_result() -> Dictionary:

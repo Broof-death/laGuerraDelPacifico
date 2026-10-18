@@ -1,7 +1,8 @@
 class_name AvoidanceSystem
 extends RefCounted
 ## Evitación local (ADR-006 punto 1, T-018): separa las unidades de tierra que se solapan (propias
-## y ajenas), según su radio. Corre cada tick (20 Hz), después del movimiento.
+## y ajenas), según su radio. Corre a 10 Hz (un tick de cada dos, RUN_EVERY), después del
+## movimiento.
 ##
 ## REJILLA: dos rejillas dispersas de celdas finas (como la SpatialGrid: claves celda/dueño/slot
 ## ordenadas con el sort nativo; lado = la mayor distancia de contacto, dos radios de la unidad de
@@ -11,11 +12,11 @@ extends RefCounted
 ## celda (fila a fila) y los vecinos se encuentran con punteros que solo avanzan.
 ##
 ## PARES:
-## - En movimiento contra quieta, a 20 Hz: cada unidad en movimiento mira las quietas de sus 3 x 3
+## - En movimiento contra quieta, en cada pasada (10 Hz): cada unidad en movimiento mira las quietas de sus 3 x 3
 ##   celdas. Es el choque que más se ve (una columna que atraviesa una formación parada): la quieta
 ##   cede IDLE_SHARE del empuje.
-## - Quieta contra quieta y en movimiento contra en movimiento, escalonados en SLOW_PHASES fases
-##   por filas de la rejilla (cada par se resuelve una vez cada 4 ticks): son solapes que cambian
+## - Quieta contra quieta (IDLE_PHASES) y en movimiento contra en movimiento (SLOW_PHASES), escalonados
+##   por filas de la rejilla (cada par cada 0,2 o 0,4 s): son solapes que cambian
 ##   despacio (dos unidades que avanzan juntas o una formación que se acomoda). Así el costo por
 ##   tick baja a la cuarta parte cuando todo el ejército se mueve. Cada par se revisa una sola vez
 ##   (la "mitad siguiente" del vecindario).
@@ -40,6 +41,14 @@ const MAX_PUSH: float = 0.3
 const IDLE_SHARE: float = 0.8
 ## Fases del escalonado de los pares quieta-quieta y en movimiento-en movimiento.
 const SLOW_PHASES: int = 4
+## Las quietas entre sí, en menos fases (cada par cada 0,2 s): así una formación apretada se
+## acomoda rápido.
+const IDLE_PHASES: int = 2
+## La evitación corre un tick de cada RUN_EVERY (10 Hz), en los ticks con tick % RUN_EVERY ==
+## RUN_PHASE: los que NO cuantizan el mundo para los snapshots (MatchServer lo hace cuando el tick
+## ya incrementado es par), para repartir el costo entre los dos ticks del ciclo.
+const RUN_EVERY: int = 2
+const RUN_PHASE: int = 0
 ## Dos unidades que se mueven las dos pueden solaparse hasta un cuarto de la suma de sus radios
 ## sin empujarse (columnas que se cruzan o se acomodan): menos empujones y menos reenvíos en los
 ## snapshots. Al detenerse, la separación completa las deja sin solaparse.
@@ -108,10 +117,10 @@ func run(store: EntityStore, map: LogicMap, include_by_def: PackedByteArray, rad
 	_copy(store, radius_by_def)
 	var t2: int = Time.get_ticks_usec()
 	last_phase_usec[1] = t2 - t1
-	var phase: int = tick % SLOW_PHASES
+	var run: int = tick / RUN_EVERY
 	_moving_vs_idle()
-	_within(0, phase, false, 1.0)
-	_within(1, phase, true, MOVING_REACH)
+	_within(0, run % IDLE_PHASES, IDLE_PHASES, false, 1.0)
+	_within(1, run % SLOW_PHASES, SLOW_PHASES, true, MOVING_REACH)
 	last_pairs = _pairs
 	last_overlaps = _overlaps
 	var t3: int = Time.get_ticks_usec()
@@ -313,11 +322,11 @@ func _moving_vs_idle() -> void:
 
 
 ## Pares dentro de un conjunto (quietas o en movimiento), escalonados: solo las unidades de las
-## filas de la rejilla con fila % SLOW_PHASES == phase miran la mitad siguiente de su vecindario
+## filas de la rejilla con fila % phases == phase miran la mitad siguiente de su vecindario
 ## (el resto de su celda, la celda de la derecha y las tres de la fila de abajo). Con
 ## `skip_enemies`, dos de distinto dueño no se empujan (en movimiento las dos: provisional).
 ## `reach`: fracción de la suma de radios a partir de la cual se separan.
-func _within(set: int, phase: int, skip_enemies: bool, reach: float) -> void:
+func _within(set: int, phase: int, phases: int, skip_enemies: bool, reach: float) -> void:
 	var m: int = _keys[set].size()
 	if m < 2:
 		return
@@ -337,9 +346,9 @@ func _within(set: int, phase: int, skip_enemies: bool, reach: float) -> void:
 		var ci: int = C[i]
 		# Fila de esta celda: si no le toca en esta fase, salta la fila entera.
 		var row: int = ci / cols
-		if row % SLOW_PHASES != phase:
+		if row % phases != phase:
 			# Salta a la próxima fila de esta fase (búsqueda binaria nativa).
-			var skip: int = (phase - row % SLOW_PHASES + SLOW_PHASES) % SLOW_PHASES
+			var skip: int = (phase - row % phases + phases) % phases
 			i = C.bsearch((row + skip) * cols, true)
 			continue
 		var e: int = i + 1
@@ -453,10 +462,10 @@ func _apply(store: EntityStore, map: LogicMap, set: int) -> void:
 		var nx: float = clampf(ox + mx, min_x, max_x)
 		var nz: float = clampf(oz + mz, min_z, max_z)
 		if has_map:
-			var ogx: int = int(floor((ox + HALF) * INV_CELL))
-			var ogz: int = int(floor((oz + HALF) * INV_CELL))
-			var ngx: int = int(floor((nx + HALF) * INV_CELL))
-			var ngz: int = int(floor((nz + HALF) * INV_CELL))
+			var ogx: int = int((ox + HALF) * INV_CELL)
+			var ogz: int = int((oz + HALF) * INV_CELL)
+			var ngx: int = int((nx + HALF) * INV_CELL)
+			var ngz: int = int((nz + HALF) * INV_CELL)
 			if (ngx != ogx or ngz != ogz) and table[map.cell_byte(ngx, ngz)] <= 0.0:
 				if ngx != ogx and table[map.cell_byte(ngx, ogz)] > 0.0:
 					nz = oz

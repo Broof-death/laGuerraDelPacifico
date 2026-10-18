@@ -29,6 +29,9 @@ var combat := PackedByteArray()
 var vis := PackedInt32Array()
 
 var _keys := PackedInt64Array()
+## Máscara de jugadores que ven cada celda de interés, y las celdas marcadas (para limpiarlas).
+var _vis_grid := PackedInt32Array()
+var _vis_touched := PackedInt32Array()
 
 
 ## Cuantiza el estado actual de la simulación. Usa store.cell (la escribe SpatialGrid.rebuild en
@@ -54,7 +57,13 @@ func capture(sim: Simulation) -> void:
 		_keys[s] = (sid[s] << 16) | s
 	_keys.sort()
 
-	var visible_by_coarse: Dictionary[int, int] = _interest(sim)
+	_interest(sim)
+	var vis_grid := _vis_grid
+	# Acciones que usan progress (tabla de 16 en vez de una llamada por entidad).
+	var uses_prog := PackedByteArray()
+	uses_prog.resize(16)
+	for a: int in 16:
+		uses_prog[a] = 1 if SnapshotCodec.action_uses_progress(a) else 0
 	var px := st.pos_x
 	var pz := st.pos_z
 	var hd := st.heading
@@ -80,29 +89,44 @@ func capture(sim: Simulation) -> void:
 	for i: int in n:
 		var s: int = _keys[i] & 0xFFFF
 		var d: int = defs[s]
-		var qx: int = clampi(int(floor((px[s] + HALF) * INV)), 0, QMAX)
-		var qz: int = clampi(int(floor((pz[s] + HALF) * INV)), 0, QMAX)
+		# Posición: dentro del mundo es no negativa (sin floor); se acota igual.
+		var fx: float = (px[s] + HALF) * INV
+		var fz: float = (pz[s] + HALF) * INV
+		var qx: int = 0 if fx <= 0.0 else mini(int(fx), QMAX)
+		var qz: int = 0 if fz <= 0.0 else mini(int(fz), QMAX)
 		var h8: int = int(roundf(hd[s] * HSCALE)) & 0xFF
 		var mh: float = max_hp[d]
-		var hp8: int = clampi(int(roundf(hp[s] / mh * 255.0)), 0, 255) if mh > 0.0 else 0
-		if hp8 == 0 and hp[s] > 0.0:
-			hp8 = 1
+		var hv: float = hp[s]
+		var hp8: int = 255
+		if hv != mh:
+			hp8 = clampi(int(roundf(hv / mh * 255.0)), 0, 255) if mh > 0.0 else 0
+			if hp8 == 0 and hv > 0.0:
+				hp8 = 1
 		var a: int = act[s]
 		ids[i] = sid[s]
 		words[i] = qx | (qz << 20) | (h8 << 40) | (hp8 << 48) | (a << 56)
 		var vx8: int = clampi(int(roundf(vxs[s] * VINV)), -VL, VL)
 		var vz8: int = clampi(int(roundf(vzs[s] * VINV)), -VL, VL)
 		vel[i] = (vx8 & 0xFF) | ((vz8 & 0xFF) << 8)
-		prog[i] = SnapshotCodec.quantize_progress(prg[s]) if SnapshotCodec.action_uses_progress(a) else 0
+		prog[i] = SnapshotCodec.quantize_progress(prg[s]) if uses_prog[a] != 0 else 0
 		def_index[i] = d
 		owner[i] = own[s]
 		combat[i] = 1 if tgt[s] != 0 else 0
 		var c: int = cells[s]
-		vis[i] = visible_by_coarse.get(((c / side) >> SH) * ISIDE + ((c % side) >> SH), 0)
+		vis[i] = vis_grid[((c / side) >> SH) * ISIDE + ((c % side) >> SH)]
 
 
-## Celda de interés -> máscara de jugadores que la ven.
-func _interest(sim: Simulation) -> Dictionary[int, int]:
+## Celda de interés -> máscara de jugadores que la ven, en _vis_grid (una rejilla de enteros en
+## vez de un Dictionary: la consulta por entidad es lo más caliente de capture()). Las celdas
+## marcadas en la captura anterior se ponen a 0 antes.
+func _interest(sim: Simulation) -> void:
+	if _vis_grid.size() != INTEREST_SIDE * INTEREST_SIDE:
+		_vis_grid.resize(INTEREST_SIDE * INTEREST_SIDE)
+		_vis_grid.fill(0)
+	var vg := _vis_grid
+	for ck: int in _vis_touched:
+		vg[ck] = 0
+	_vis_touched.clear()
 	var grid := sim.grid
 	var keys := grid.keys
 	var cols: int = grid.cols
@@ -128,7 +152,6 @@ func _interest(sim: Simulation) -> Dictionary[int, int]:
 		var coarse: int = ((c / cols) >> INTEREST_CELL_SHIFT) * INTEREST_SIDE + ((c % cols) >> INTEREST_CELL_SHIFT)
 		occupied[(coarse << 4) | own] = true
 	# 2) Marcar el entorno de cada celda ocupada.
-	var out: Dictionary[int, int] = {}
 	for key: int in occupied:
 		var own: int = key & 0xF
 		var coarse: int = key >> 4
@@ -138,5 +161,7 @@ func _interest(sim: Simulation) -> Dictionary[int, int]:
 		for z: int in range(maxi(cz - ring, 0), mini(cz + ring, rows_i - 1) + 1):
 			for x: int in range(maxi(cx - ring, 0), mini(cx + ring, cols_i - 1) + 1):
 				var ck: int = z * INTEREST_SIDE + x
-				out[ck] = out.get(ck, 0) | bit
-	return out
+				var prev: int = vg[ck]
+				if prev == 0:
+					_vis_touched.append(ck)
+				vg[ck] = prev | bit

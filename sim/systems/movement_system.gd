@@ -24,9 +24,8 @@ extends RefCounted
 ##   ARRIVE_SLACK (más dos radios) de su destino se da por llegada y, si está cerca de un punto de
 ##   paso intermedio, pasa al siguiente.
 ## - Al llegar al destino, la entidad queda en IDLE y suelta su grupo y su ruta.
-## La velocidad (vel_x, vel_z) es la rapidez actual en la dirección del rumbo, sin el empuje de la
-## evitación: así el dead reckoning del cliente no ve el temblor de los empujones, y solo cambia al
-## girar o al cambiar de rapidez.
+## La velocidad (vel_x, vel_z) es la del paso propio hacia el objetivo, sin el empuje de la
+## evitación: el dead reckoning del cliente no ve el temblor de los empujones.
 
 ## way_index: índice del punto de paso en los bits bajos; RAW = sigue la ruta sin desplazamiento.
 const RAW: int = 1 << 24
@@ -166,11 +165,14 @@ static func run(sim: Simulation, dt: float) -> void:
 					vz[s] = 0.0
 					wpd[s] = INF
 					continue
-		# Velocidad según el rumbo (solo cambia al girar o cambiar de rapidez).
-		if turned or cur != prev:
+		# Velocidad: la del paso propio hacia el objetivo (sin el empuje de la evitación). Los
+		# cambios chicos no se reenvían: SnapshotSender y SnapshotWorld tienen histéresis.
+		if cur != prev:
 			spd[s] = cur
-			vx[s] = cur * sin(h)
-			vz[s] = cur * cos(h)
+		if dist > 0.0001:
+			var kv: float = cur / dist
+			vx[s] = dx * kv
+			vz[s] = dz * kv
 		var step: float = cur * dt
 		var nx: float
 		var nz: float
@@ -183,10 +185,10 @@ static func run(sim: Simulation, dt: float) -> void:
 			nx = ox + dx * k
 			nz = oz + dz * k
 		if has_map:
-			var ogx: int = int(floor((ox + HALF) * INV_CELL))
-			var ogz: int = int(floor((oz + HALF) * INV_CELL))
-			var ngx: int = int(floor((nx + HALF) * INV_CELL))
-			var ngz: int = int(floor((nz + HALF) * INV_CELL))
+			var ogx: int = int((ox + HALF) * INV_CELL)
+			var ogz: int = int((oz + HALF) * INV_CELL)
+			var ngx: int = int((nx + HALF) * INV_CELL)
+			var ngz: int = int((nz + HALF) * INV_CELL)
 			if ngx != ogx or ngz != ogz:
 				var table: PackedFloat32Array = sea_table if layer_by_def[d] == Terrain.Layer.SEA else land_table
 				if table[map.cell_byte(ngx, ngz)] <= 0.0 and table[map.cell_byte(ogx, ogz)] > 0.0:

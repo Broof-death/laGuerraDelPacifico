@@ -8,7 +8,7 @@ extends RefCounted
 ##   (a2) rutas: como mucho 8 búsquedas terminadas y un presupuesto de trabajo determinista por
 ##        tick (RouteStore, T-013 y T-018),
 ##   (b) sistemas a 20 Hz: movimiento, órdenes encoladas con Shift que arrancan (T-018), evitación
-##       local (T-018), rejilla espacial; y sistemas a 5 Hz escalonados (adquisición de objetivos,
+##       local (T-018, a 10 Hz: un tick de cada dos), rejilla espacial; y sistemas a 5 Hz escalonados (adquisición de objetivos,
 ##       alerta del régimen de marcha, visibilidad),
 ##   (c) tick += 1.
 ##   (d) los snapshots cada 2 ticks los hace MatchServer (T-005) después de step().
@@ -154,7 +154,11 @@ func step() -> void:
 	MovementSystem.run(self, dt)
 	_advance_queued_orders()
 	var t2: int = _lap(SystemId.MOVEMENT, tp)
-	avoidance.run(store, map, avoid_by_def, radius_by_def, _contact, tick)
+	if tick % AvoidanceSystem.RUN_EVERY == AvoidanceSystem.RUN_PHASE:
+		avoidance.run(store, map, avoid_by_def, radius_by_def, _contact, tick)
+	else:
+		avoidance.last_pairs = 0
+		avoidance.last_overlaps = 0
 	var t2b: int = _lap(SystemId.AVOIDANCE, t2)
 	grid.rebuild(store)
 	var t3: int = _lap(SystemId.GRID, t2b)

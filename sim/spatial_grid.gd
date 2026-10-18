@@ -59,8 +59,11 @@ func rebuild(store: EntityStore) -> void:
 	var max_cx: int = cols - 1
 	var max_cz: int = rows - 1
 	for s: int in n:
-		var cx: int = clampi(int(floor((px[s] - origin_x) * inv)), 0, max_cx)
-		var cz: int = clampi(int(floor((pz[s] - origin_z) * inv)), 0, max_cz)
+		# Dentro de los límites la posición relativa es no negativa: sin floor (T-018).
+		var fx: float = (px[s] - origin_x) * inv
+		var fz: float = (pz[s] - origin_z) * inv
+		var cx: int = mini(int(fx), max_cx) if fx > 0.0 else 0
+		var cz: int = mini(int(fz), max_cz) if fz > 0.0 else 0
 		var c: int = cz * cols + cx
 		cells[s] = c
 		keys[s] = (c << CELL_SHIFT) | (owners[s] << OWNER_SHIFT) | s

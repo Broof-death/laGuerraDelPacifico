@@ -30,6 +30,11 @@ extends RefCounted
 ## nota en la posición recién cuando el error crece, y entonces cuenta).
 
 const RING_SIZE: int = 32
+## Histéresis de los envíos (T-018): cambios de rumbo de menos de HEADING_HYST pasos de 1,4° y de
+## velocidad de menos de VEL_HYST pasos de 0,125 m/s (suma de los dos ejes) no fuerzan un registro.
+const HEADING_HYST: int = 3
+const VEL_HYST: int = 6
+const HEAD_BITS: int = 0xFF << 40
 const ACK_TIMEOUT_TICKS: int = SimConstants.TICK_RATE
 const _AGE_CAP: int = 1023
 ## Tope del error al cuadrado (en pasos de 0,125 m) dentro de la prioridad: 4 m.
@@ -54,6 +59,12 @@ var base_tick: int = -1
 
 # --- Estadísticas del último build() ---
 var last_bytes: int = 0
+## Tiempos (µs) del último build(), solo para medir: mezcla, selección, codificación y estado; y
+## registros candidatos (antes del tope).
+var last_phase_usec := PackedInt64Array([0, 0, 0, 0])
+var last_record_count: int = 0
+## Entidades que la mezcla saltó por los atajos (estadística).
+var last_skipped: int = 0
 var last_packets: int = 0
 var last_max_packet_bytes: int = 0
 var last_records: int = 0
@@ -133,10 +144,20 @@ func build(world: SnapshotWorld, last_seq: int) -> Array[PackedByteArray]:
 		base_tick = -1
 		full_resets += 1
 	var base: SnapshotState = _ring[base_tick] if base_tick >= 0 else _empty
+	var t0: int = Time.get_ticks_usec()
 	var nr: int = _merge(world, base, now)
+	var t1: int = Time.get_ticks_usec()
 	_select(nr)
+	var t2: int = Time.get_ticks_usec()
 	var packets: Array[PackedByteArray] = _encode(world, base, nr, now, last_seq)
+	var t3: int = Time.get_ticks_usec()
 	_store_state(world, base, nr, now)
+	var t4: int = Time.get_ticks_usec()
+	last_phase_usec[0] = t1 - t0
+	last_phase_usec[1] = t2 - t1
+	last_phase_usec[2] = t3 - t2
+	last_phase_usec[3] = t4 - t3
+	last_record_count = nr
 	snapshots_sent += 1
 	return packets
 
@@ -196,6 +217,7 @@ func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 	var nr: int = 0
 	var i: int = 0
 	var j: int = 0
+	var skipped: int = 0
 	while i < nw or j < nb:
 		var a: int = wid[i] if i < nw else BIG
 		var b: int = bid[j] if j < nb else BIG
@@ -211,25 +233,64 @@ func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 				var nv: int = wvel[i]
 				var ov: int = bvel[j]
 				var dt: int = now - bref[j]
+				# Atajo (T-018): quieta, sin cambios y sin refresco pendiente -> nada que enviar.
+				if dt < REFRESH and wprog[i] == bprog[j] and ((nwd ^ owd) & DISC) == 0 						and ov == 0 and nv == 0 and nwd == owd:
+					skipped += 1
+					i += 1
+					j += 1
+					continue
 				# Posición que predice el cliente (SnapshotCodec.predict_q en línea).
-				var vx: int = ov & 0xFF
-				if vx >= 128:
-					vx -= 256
-				var vz: int = (ov >> 8) & 0xFF
-				if vz >= 128:
-					vz -= 256
-				var n: int = vx * dt
-				var px: int = clampi((owd & QM) + (n + (VTH if n >= 0 else -VTH)) / VT, 0, QM)
-				n = vz * dt
-				var pz: int = clampi(((owd >> 20) & QM) + (n + (VTH if n >= 0 else -VTH)) / VT, 0, QM)
+				var vx: int = 0
+				var vz: int = 0
+				var px: int = owd & QM
+				var pz: int = (owd >> 20) & QM
+				if ov != 0:
+					vx = ov & 0xFF
+					if vx >= 128:
+						vx -= 256
+					vz = (ov >> 8) & 0xFF
+					if vz >= 128:
+						vz -= 256
+					var n: int = vx * dt
+					px += (n + (VTH if n >= 0 else -VTH)) / VT
+					n = vz * dt
+					pz += (n + (VTH if n >= 0 else -VTH)) / VT
+					if px < 0:
+						px = 0
+					elif px > QM:
+						px = QM
+					if pz < 0:
+						pz = 0
+					elif pz > QM:
+						pz = QM
 				var ex: int = (nwd & QM) - px
 				var ez: int = ((nwd >> 20) & QM) - pz
 				var err2: int = ex * ex + ez * ez
 				if err2 > max_err2:
 					max_err2 = err2
 				var disc: int = (nwd ^ owd) & DISC
+				# Histéresis (T-018): un giro de menos de HEADING_HYST pasos (~4°) no dispara el
+				# envío (viaja con el próximo registro de la entidad).
+				if (disc & HEAD_BITS) != 0:
+					var dh: int = (((nwd >> 40) & 0xFF) - ((owd >> 40) & 0xFF)) & 0xFF
+					if dh >= 128:
+						dh = 256 - dh
+					if dh < HEADING_HYST:
+						disc &= ~HEAD_BITS
 				var prog_changed: bool = wprog[i] != bprog[j] and SnapshotCodec.action_uses_progress((nwd >> 56) & 0xF)
 				var vel_changed: bool = nv != ov
+				# Histéresis de la velocidad: arrancar o detenerse siempre cuenta; un cambio de menos
+				# de VEL_HYST pasos (giros suaves, rampas) solo se envía cuando el error de la
+				# predicción pasa el umbral de 0,5 m.
+				if vel_changed and nv != 0 and ov != 0:
+					var nvx: int = nv & 0xFF
+					if nvx >= 128:
+						nvx -= 256
+					var nvz: int = (nv >> 8) & 0xFF
+					if nvz >= 128:
+						nvz -= 256
+					if absi(nvx - vx) + absi(nvz - vz) < VEL_HYST:
+						vel_changed = false
 				var off: bool = err2 > TH2
 				var anchor: bool = off or vel_changed or dt >= REFRESH
 				if anchor or disc != 0 or prog_changed:
@@ -283,6 +344,7 @@ func _merge(world: SnapshotWorld, base: SnapshotState, now: int) -> int:
 			rbits[nr] = DIED
 			nr += 1
 			j += 1
+	last_skipped = skipped
 	last_max_combat_age = max_age
 	last_max_error_q = int(sqrt(float(max_err2)))
 	return nr
@@ -654,9 +716,15 @@ func _store_state(world: SnapshotWorld, base: SnapshotState, nr: int, now: int) 
 	var bfresh := base.fresh
 	var nb: int = bid.size()
 	var appear_count: int = 0
+	var structural: bool = false
 	for k: int in nr:
-		if rk[k] == _K_APPEAR and chosen[k] != 0:
-			appear_count += 1
+		if chosen[k] != 0 and rk[k] != _K_UPDATE:
+			structural = true
+			if rk[k] == _K_APPEAR:
+				appear_count += 1
+	if not structural:
+		_store_same_ids(world, base, nr, now)
+		return
 	var st := SnapshotState.new()
 	st.resize(nb + appear_count, true)
 	var sid := st.ids
@@ -719,6 +787,54 @@ func _store_state(world: SnapshotWorld, base: SnapshotState, nr: int, now: int) 
 		o += 1
 		j += 1
 	st.resize(o, true)
+	_push_state(st, now)
+
+
+## Atajo de _store_state (T-018) cuando no entra ninguna aparición ni baja: el estado tiene los
+## mismos ids que la base. Se copia la base en nativo (los ids se comparten: los estados no se
+## modifican) y se pisan solo los registros.
+func _store_same_ids(world: SnapshotWorld, base: SnapshotState, nr: int, now: int) -> void:
+	var rk := _r_kind
+	var rwi := _r_wi
+	var rbi := _r_bi
+	var rword := _r_word
+	var rvel := _r_vel
+	var rref := _r_ref
+	var rstale := _r_stale
+	var chosen := _r_chosen
+	var wprog := world.prog
+	var bfresh := base.fresh
+	var st := SnapshotState.new()
+	st.ids = base.ids
+	st.words = base.words.duplicate()
+	st.vel = base.vel.duplicate()
+	st.ref = base.ref.duplicate()
+	st.prog = base.prog.duplicate()
+	var sf := PackedInt32Array()
+	sf.resize(base.ids.size())
+	sf.fill(now)
+	st.fresh = sf
+	var sw := st.words
+	var sv := st.vel
+	var sr := st.ref
+	var sp := st.prog
+	for k: int in nr:
+		var kind: int = rk[k]
+		if kind == _K_UPDATE:
+			var j: int = rbi[k]
+			if chosen[k] != 0:
+				sw[j] = rword[k]
+				sv[j] = rvel[k]
+				sr[j] = rref[k]
+				sp[j] = wprog[rwi[k]]
+			elif rstale[k] != 0:
+				sf[j] = bfresh[j]
+		elif kind == _K_REMOVED:
+			sf[rbi[k]] = bfresh[rbi[k]]
+	_push_state(st, now)
+
+
+func _push_state(st: SnapshotState, now: int) -> void:
 	_ring[now] = st
 	_ring_ticks.append(now)
 	while _ring_ticks.size() > RING_SIZE:
