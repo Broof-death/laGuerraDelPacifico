@@ -5,6 +5,7 @@ extends RefCounted
 ##
 ## Orden de cada step():
 ##   (a) vaciar la cola de comandos (los aceptados con submit() antes de este tick),
+##   (a2) rutas: como mucho 8 búsquedas de la cola (RouteStore, T-013),
 ##   (b) sistemas a 20 Hz (movimiento), rejilla espacial y sistemas a 5 Hz escalonados
 ##       (adquisición de objetivos, visibilidad),
 ##   (c) tick += 1.
@@ -12,14 +13,19 @@ extends RefCounted
 ## El tiempo real lo maneja TickAccumulator: step() siempre avanza exactamente TICK_DT.
 
 ## Índices de last_system_usec.
-enum SystemId { COMMANDS, MOVEMENT, GRID, ACQUISITION, VISIBILITY, COUNT }
-const SYSTEM_NAMES: PackedStringArray = ["commands", "movement", "grid", "acquisition", "visibility"]
+enum SystemId { COMMANDS, PATHS, MOVEMENT, GRID, ACQUISITION, VISIBILITY, COUNT }
+const SYSTEM_NAMES: PackedStringArray = ["commands", "paths", "movement", "grid", "acquisition", "visibility"]
 
 var tick: int = 0
 var store: EntityStore
 var grid: SpatialGrid
 var queue: CommandQueue
 var groups: MoveGroups
+## Rutas compartidas por orden y capa, con su cola de búsquedas (T-013).
+var routes: RouteStore
+## Mapa lógico (ADR-009). null = sin terreno: todo transitable y rutas en línea recta.
+var map: LogicMap
+var finder: PathFinder
 var game_data: GameData
 ## Límites del mapa en el plano (x, z). Por defecto, el mundo de ADR-009 centrado en el origen.
 var bounds: Rect2
@@ -34,6 +40,8 @@ var speed_by_def: PackedFloat32Array = PackedFloat32Array()
 var max_hp_by_def: PackedFloat32Array = PackedFloat32Array()
 var vision_by_def: PackedFloat32Array = PackedFloat32Array()
 var radius_by_def: PackedFloat32Array = PackedFloat32Array()
+## Capa de rutas (Terrain.Layer) por def_index: tropas por tierra, buques por mar.
+var layer_by_def: PackedByteArray = PackedByteArray()
 
 var _acquisition := TargetAcquisitionSystem.new()
 var _visibility := VisibilitySystem.new()
@@ -41,13 +49,17 @@ var _visibility := VisibilitySystem.new()
 
 ## `data` debe tener el índice construido y válido (GameData.build_index() sin errores).
 ## `p_bounds` vacío = MapGrid.world_rect() (131 072 m centrados; la celda de la rejilla es global).
-func _init(data: GameData, p_seed: int = 0, p_bounds: Rect2 = Rect2()) -> void:
+## `p_map`: mapa lógico para rutas y validación del terreno (null = sin terreno).
+func _init(data: GameData, p_seed: int = 0, p_bounds: Rect2 = Rect2(), p_map: LogicMap = null) -> void:
 	game_data = data
 	bounds = p_bounds if p_bounds.has_area() else MapGrid.world_rect()
 	store = EntityStore.new()
 	grid = SpatialGrid.new(bounds.size.x, bounds.size.y, bounds.position.x, bounds.position.y)
 	queue = CommandQueue.new()
 	groups = MoveGroups.new()
+	routes = RouteStore.new()
+	map = p_map
+	finder = PathFinder.new(map) if map != null else null
 	rng = RandomNumberGenerator.new()
 	rng.seed = p_seed
 	last_system_usec.resize(SystemId.COUNT)
@@ -72,6 +84,7 @@ func remove_entity(entity_id: int) -> bool:
 	if s < 0:
 		return false
 	groups.leave(store.move_group[s])
+	routes.release(store.route[s])
 	return store.remove(entity_id)
 
 
@@ -98,9 +111,14 @@ func step() -> void:
 		queue.record(tick, players[i], commands[i])
 	var t1: int = _lap(SystemId.COMMANDS, t0)
 
+	# (a2) Rutas pendientes (como mucho RouteStore.MAX_SEARCHES_PER_TICK búsquedas). Los fallos
+	# vuelven al jugador como COMMAND_REJECTED(UNREACHABLE).
+	routes.process(finder, queue.rejections)
+	var tp: int = _lap(SystemId.PATHS, t1)
+
 	# (b) 20 Hz.
-	MovementSystem.run(store, groups, speed_by_def, dt)
-	var t2: int = _lap(SystemId.MOVEMENT, t1)
+	MovementSystem.run(store, groups, routes, map, layer_by_def, speed_by_def, dt)
+	var t2: int = _lap(SystemId.MOVEMENT, tp)
 	grid.rebuild(store)
 	var t3: int = _lap(SystemId.GRID, t2)
 
@@ -123,11 +141,11 @@ func _lap(system: SystemId, since: int) -> int:
 	return now
 
 
-func _apply_command(_player_id: int, cmd: Command) -> void:
+func _apply_command(player_id: int, cmd: Command) -> void:
 	match cmd.type:
 		Command.Type.MOVE, Command.Type.ATTACK_MOVE:
 			# ATTACK_MOVE se mueve igual que MOVE hasta que exista el combate.
-			_apply_move(cmd)
+			_apply_move(player_id, cmd)
 		Command.Type.STOP:
 			_apply_stop(cmd)
 		Command.Type.ATTACK:
@@ -135,40 +153,57 @@ func _apply_command(_player_id: int, cmd: Command) -> void:
 			var t: int = store.slot_of(cmd.target_id)
 			if t >= 0:
 				var move := Command.make_move(cmd.seq, cmd.entity_ids, Vector2(store.pos_x[t], store.pos_z[t]))
-				_apply_move(move)
+				_apply_move(player_id, move)
 
 
-func _apply_move(cmd: Command) -> void:
-	# Las entidades que murieron entre la validación y este tick se ignoran.
-	var slots := PackedInt32Array()
+func _apply_move(player_id: int, cmd: Command) -> void:
+	# Las entidades que murieron entre la validación y este tick se ignoran. Las de cada capa
+	# (tierra y mar) reciben su propia ruta: una orden mixta se parte en dos.
+	var by_layer: Array[PackedInt32Array] = [PackedInt32Array(), PackedInt32Array()]
 	for entity_id: int in cmd.entity_ids:
 		var s: int = store.slot_of(entity_id)
 		if s >= 0 and speed_by_def[store.def_index[s]] > 0.0:
-			slots.append(s)
-	if slots.is_empty():
-		return
+			by_layer[layer_by_def[store.def_index[s]]].append(s)
+	for layer: int in Terrain.LAYER_COUNT:
+		if not by_layer[layer].is_empty():
+			_move_slots(player_id, cmd, layer, by_layer[layer])
+
+
+## Una ruta (y, con 8 o más unidades, un grupo de movimiento con formación) para las unidades
+## de una capa.
+func _move_slots(player_id: int, cmd: Command, layer: int, slots: PackedInt32Array) -> void:
 	var tx: float = cmd.target_pos.x
 	var tz: float = cmd.target_pos.y
 	for s: int in slots:
 		_leave_group(s)
-	if slots.size() < SimConstants.MOVE_GROUP_MIN_UNITS:
-		for s: int in slots:
-			_order_move(s, tx, tz, 0)
-		return
-
-	# Grupo de movimiento: una ruta (el destino) y una formación alrededor de él.
 	var cx: float = 0.0
 	var cz: float = 0.0
-	var slowest: float = INF
-	var widest: float = 0.0
 	for s: int in slots:
 		cx += store.pos_x[s]
 		cz += store.pos_z[s]
+	cx /= slots.size()
+	cz /= slots.size()
+	# Origen de la ruta: la unidad más cercana al centro (el centro puede caer en un obstáculo).
+	var lead: int = slots[0]
+	var best: float = INF
+	for s: int in slots:
+		var d: float = Vector2(store.pos_x[s] - cx, store.pos_z[s] - cz).length_squared()
+		if d < best:
+			best = d
+			lead = s
+	var rid: int = routes.create(slots.size(), layer, player_id, cmd.seq, store.pos_x[lead], store.pos_z[lead], tx, tz)
+	if slots.size() < SimConstants.MOVE_GROUP_MIN_UNITS:
+		for s: int in slots:
+			_order_move(s, tx, tz, 0, rid)
+		return
+
+	# Grupo de movimiento: una ruta y una formación alrededor del destino.
+	var slowest: float = INF
+	var widest: float = 0.0
+	for s: int in slots:
 		var d: int = store.def_index[s]
 		slowest = minf(slowest, speed_by_def[d])
 		widest = maxf(widest, radius_by_def[d])
-	cx /= slots.size()
-	cz /= slots.size()
 	var forward := Vector2(tx - cx, tz - cz)
 	var offsets: PackedVector2Array = FormationLayout.offsets(slots.size(), widest * 2.5, forward, cmd.formation)
 	var gid: int = groups.create(slots.size(), slowest, tx, tz)
@@ -176,7 +211,7 @@ func _apply_move(cmd: Command) -> void:
 		var dest := Vector2(tx, tz) + offsets[i]
 		dest.x = clampf(dest.x, bounds.position.x, bounds.end.x)
 		dest.y = clampf(dest.y, bounds.position.y, bounds.end.y)
-		_order_move(slots[i], dest.x, dest.y, gid)
+		_order_move(slots[i], dest.x, dest.y, gid, rid)
 
 
 func _apply_stop(cmd: Command) -> void:
@@ -192,18 +227,28 @@ func _apply_stop(cmd: Command) -> void:
 		store.vel_z[s] = 0.0
 
 
-func _order_move(s: int, x: float, z: float, gid: int) -> void:
+func _order_move(s: int, x: float, z: float, gid: int, rid: int) -> void:
 	store.dest_x[s] = x
 	store.dest_z[s] = z
+	store.wp_x[s] = x
+	store.wp_z[s] = z
 	store.move_group[s] = gid
+	store.route[s] = rid
+	store.way_index[s] = -1
 	store.action[s] = SimConstants.Action.MOVE
 
 
+## Saca la unidad de su grupo de movimiento y de su ruta.
 func _leave_group(s: int) -> void:
 	var g: int = store.move_group[s]
 	if g != 0:
 		groups.leave(g)
 		store.move_group[s] = 0
+	var r: int = store.route[s]
+	if r != 0:
+		routes.release(r)
+		store.route[s] = 0
+	store.way_index[s] = -1
 
 
 func _build_stat_tables() -> void:
@@ -212,6 +257,7 @@ func _build_stat_tables() -> void:
 	max_hp_by_def.resize(n)
 	vision_by_def.resize(n)
 	radius_by_def.resize(n)
+	layer_by_def.resize(n)
 	for i: int in n:
 		var def: EntityDef = game_data.get_def(i)
 		max_hp_by_def[i] = def.max_hp
@@ -219,6 +265,8 @@ func _build_stat_tables() -> void:
 		if def is UnitDef:
 			speed_by_def[i] = (def as UnitDef).speed
 			radius_by_def[i] = (def as UnitDef).radius
+			layer_by_def[i] = Terrain.layer_for_domain((def as UnitDef).domain)
 		else:
 			speed_by_def[i] = 0.0
 			radius_by_def[i] = 0.0
+			layer_by_def[i] = Terrain.Layer.LAND

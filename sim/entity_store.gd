@@ -26,13 +26,21 @@ var move_group: PackedInt32Array = PackedInt32Array()
 var target_id: PackedInt32Array = PackedInt32Array()
 ## Celda de la SpatialGrid (la escribe SpatialGrid.rebuild).
 var cell: PackedInt32Array = PackedInt32Array()
+## Ruta que sigue (RouteStore, 0 = ninguna) y punto de paso actual (-1 = la ruta todavía no
+## empezó: el movimiento la inicia cuando está lista).
+var route: PackedInt32Array = PackedInt32Array()
+var way_index: PackedInt32Array = PackedInt32Array()
 
 # --- Posición en metros (float64 por la precisión en 125 km) ---
 var pos_x: PackedFloat64Array = PackedFloat64Array()
 var pos_z: PackedFloat64Array = PackedFloat64Array()
-## Destino del movimiento.
+## Destino del movimiento (el puesto final de la unidad).
 var dest_x: PackedFloat64Array = PackedFloat64Array()
 var dest_z: PackedFloat64Array = PackedFloat64Array()
+## Objetivo inmediato: el punto de paso actual de la ruta (con el desplazamiento de la unidad en
+## la formación) o, en el último tramo, el destino.
+var wp_x: PackedFloat64Array = PackedFloat64Array()
+var wp_z: PackedFloat64Array = PackedFloat64Array()
 
 # --- Flotantes ---
 ## Rumbo en radianes alrededor de Y: atan2(dx, dz), 0 = hacia +Z.
@@ -68,10 +76,14 @@ func spawn(p_def_index: int, p_owner: int, x: float, z: float, p_heading: float,
 	move_group[s] = 0
 	target_id[s] = SimConstants.NO_ENTITY
 	cell[s] = 0
+	route[s] = 0
+	way_index[s] = -1
 	pos_x[s] = x
 	pos_z[s] = z
 	dest_x[s] = x
 	dest_z[s] = z
+	wp_x[s] = x
+	wp_z[s] = z
 	heading[s] = p_heading
 	vel_x[s] = 0.0
 	vel_z[s] = 0.0
@@ -97,10 +109,14 @@ func remove(entity_id: int) -> bool:
 		move_group[s] = move_group[last]
 		target_id[s] = target_id[last]
 		cell[s] = cell[last]
+		route[s] = route[last]
+		way_index[s] = way_index[last]
 		pos_x[s] = pos_x[last]
 		pos_z[s] = pos_z[last]
 		dest_x[s] = dest_x[last]
 		dest_z[s] = dest_z[last]
+		wp_x[s] = wp_x[last]
+		wp_z[s] = wp_z[last]
 		heading[s] = heading[last]
 		vel_x[s] = vel_x[last]
 		vel_z[s] = vel_z[last]
@@ -138,10 +154,14 @@ func _grow(new_capacity: int) -> void:
 	move_group.resize(new_capacity)
 	target_id.resize(new_capacity)
 	cell.resize(new_capacity)
+	route.resize(new_capacity)
+	way_index.resize(new_capacity)
 	pos_x.resize(new_capacity)
 	pos_z.resize(new_capacity)
 	dest_x.resize(new_capacity)
 	dest_z.resize(new_capacity)
+	wp_x.resize(new_capacity)
+	wp_z.resize(new_capacity)
 	heading.resize(new_capacity)
 	vel_x.resize(new_capacity)
 	vel_z.resize(new_capacity)
