@@ -62,10 +62,29 @@ var _dr_checked: int = 0
 var _dr_over: int = 0
 ## Ticks (los primeros 40) en que alguna entidad en combate llevaba más de 300 ms desactualizada.
 var _late_ticks := PackedInt32Array()
-## Tiempo de cada búsqueda de ruta (µs).
+## Tiempo de cada tramo de búsqueda de ruta (µs), ticks y trabajo de cada búsqueda terminada.
 var _path_usec := PackedInt64Array()
+var _path_ticks := PackedInt64Array()
+var _path_work := PackedInt64Array()
+## Evitación local por tick (T-018): pares revisados y pares que se solapaban.
+var _avoid_pairs := PackedInt64Array()
+var _avoid_overlaps := PackedInt64Array()
+var _avoid_phase: Array[PackedInt64Array] = [PackedInt64Array(), PackedInt64Array(), PackedInt64Array(), PackedInt64Array()]
 ## --path_stress=1: el micro de los bots manda a puntos lejanos (búsquedas HPA* reales).
 var _path_stress: bool = false
+## --long_routes=N (T-018): N escuadras de 8 unidades en el norte del mapa provisional reciben,
+## todas en el mismo tick (LONG_ROUTES_TICK), una orden MOVE al sur: N búsquedas de más de 30 km a
+## la vez. Mide el peor tick, los ticks que tarda cada búsqueda y el largo de cada ruta.
+var _long_routes: int = 0
+var _long_squads: Array[PackedInt32Array] = []
+var _long_lengths := PackedFloat64Array()
+var _long_issue_tick: int = -1
+var _long_ready_ticks := PackedInt32Array()
+var _long_tick_usec := PackedInt64Array()
+const LONG_ROUTES_TICK: int = 200
+const LONG_SQUAD_UNITS: int = 8
+## Tiempo de movimiento + evitación de cada tick medido (µs).
+var _move_avoid_usec := PackedInt64Array()
 
 
 func _ready() -> void:
@@ -81,6 +100,7 @@ func _ready() -> void:
 	var ghosts_enabled: bool = args.get("ghosts", "1") != "0"
 	_start_radius = float(args.get("radius", START_RADIUS))
 	_path_stress = args.get("path_stress", "0") != "0"
+	_long_routes = int(args.get("long_routes", "0"))
 	if scenario == "":
 		scenario = "custom"
 
@@ -96,7 +116,15 @@ func _ready() -> void:
 	var map: LogicMap = LogicMap.load_shared() if args.get("map", "1") != "0" else null
 	_sim = Simulation.new(data, seed_value, Rect2(), map)
 	_sim.profiling = true
+	# --avoid=0: sin evitación local (para comparar).
+	_sim.avoidance.enabled = args.get("avoid", "1") != "0"
 	_spawn_armies(players, units)
+	if _long_routes > 0:
+		if map == null:
+			push_error("--long_routes necesita el mapa lógico (sin --map=0)")
+			get_tree().quit(2)
+			return
+		_spawn_long_squads(players)
 	_server = MatchServer.new(_sim)
 	_server.profiling = true
 	_net = LocalNetwork.new(seed_value)
@@ -147,6 +175,8 @@ func _ready() -> void:
 	for t: int in ticks:
 		if t % BOT_DECISION_TICKS == 0:
 			_bots_decide(players)
+		if _long_routes > 0 and t == LONG_ROUTES_TICK:
+			_order_long_routes(players)
 		_churn(players, deaths_per_sec, t)
 		_server.poll()
 		var t0 := Time.get_ticks_usec()
@@ -154,11 +184,21 @@ func _ready() -> void:
 		var dt := Time.get_ticks_usec() - t0
 		var measured: bool = t >= mini(WARMUP_TICKS, ticks / 10)
 		_path_usec.append_array(_sim.routes.last_search_usec)
+		for k: int in _sim.routes.last_search_ticks.size():
+			_path_ticks.append(_sim.routes.last_search_ticks[k])
+			_path_work.append(_sim.routes.last_search_work[k])
 		if measured:
+			_avoid_pairs.append(_sim.avoidance.last_pairs)
+			_avoid_overlaps.append(_sim.avoidance.last_overlaps)
+			for k: int in 4:
+				_avoid_phase[k].append(_sim.avoidance.last_phase_usec[k])
 			tick_usec.append(dt)
 			snap_usec.append(_server.last_snapshot_usec)
 			for i: int in Simulation.SystemId.COUNT:
 				sys_usec[i].append(_sim.last_system_usec[i])
+			_move_avoid_usec.append(_sim.last_system_usec[Simulation.SystemId.MOVEMENT] + _sim.last_system_usec[Simulation.SystemId.AVOIDANCE])
+		if _long_issue_tick >= 0:
+			_track_long_routes(t, dt)
 		# Estadísticas de los snapshots armados en este tick.
 		for p: int in players:
 			var conn := _server.get_conn(p + 1)
@@ -213,8 +253,17 @@ func _ready() -> void:
 		"seed": seed_value,
 		"map": map != null,
 		"path_stress": _path_stress,
+		"movement_plus_avoidance_ms": _stats_ms(_move_avoid_usec),
+		"long_routes": _long_result(),
 		"path_searches": _sim.routes.total_searches,
 		"path_search_ms": _stats_ms(_path_usec),
+		"path_search_ticks": _stats_int(_path_ticks),
+		"path_search_work": _stats_int(_path_work),
+		"path_work_per_tick": RouteStore.WORK_PER_TICK,
+		"avoidance_pairs": _stats_int(_avoid_pairs),
+		"avoidance_overlaps": _stats_int(_avoid_overlaps),
+		"avoidance_phase_ms": {"grid": _stats_ms(_avoid_phase[0]), "copy": _stats_ms(_avoid_phase[1]),
+			"sweep": _stats_ms(_avoid_phase[2]), "push": _stats_ms(_avoid_phase[3])},
 		"deaths_per_sec": deaths_per_sec,
 		"start_radius": _start_radius,
 		"wall_seconds": snappedf(wall_s, 0.01),
@@ -273,6 +322,70 @@ func _ready() -> void:
 	_server = null
 	_sim = null
 	get_tree().quit(0 if passed else 1)
+
+
+## Escuadras para --long_routes: en el norte del mapa provisional, separadas 300 m en x.
+func _spawn_long_squads(players: int) -> void:
+	for k: int in _long_routes:
+		var base := Vector2(-11500.0 + k * 300.0, TestMapBuilder.LAND_NORTH.y)
+		while not _sim.map.passable_at(Terrain.Layer.LAND, base.x, base.y):
+			base.y += 50.0
+		var ids := PackedInt32Array()
+		for i: int in LONG_SQUAD_UNITS:
+			ids.append(_sim.spawn_entity(0, k % players + 1, base.x + (i % 4) * 3.0, base.y + (i / 4) * 3.0, PI))
+		_long_squads.append(ids)
+	_long_lengths.resize(_long_routes)
+	_long_lengths.fill(-1.0)
+	_long_ready_ticks.resize(_long_routes)
+	_long_ready_ticks.fill(-1)
+
+
+## Las N órdenes van en el mismo tick (se aplican y se encolan sus búsquedas en el siguiente).
+func _order_long_routes(players: int) -> void:
+	for k: int in _long_routes:
+		var dest := Vector2(-11500.0 + k * 300.0, TestMapBuilder.LAND_SOUTH.y)
+		_submit(k % players + 1, Command.make_move(_next_seq(), _long_squads[k], dest))
+	_long_issue_tick = LONG_ROUTES_TICK
+
+
+## Tiempo de los ticks desde la orden hasta que todas las rutas largas están listas, y el largo de
+## cada ruta (desde la unidad de origen).
+func _track_long_routes(t: int, tick_usec: int) -> void:
+	var pending: bool = false
+	for k: int in _long_routes:
+		if _long_ready_ticks[k] >= 0:
+			continue
+		var s := _sim.store.slot_of(_long_squads[k][0])
+		var r: int = _sim.store.route[s] if s >= 0 else 0
+		if r != 0 and _sim.routes.status[r] == RouteStore.Status.READY:
+			_long_ready_ticks[k] = t - _long_issue_tick
+			var pts: PackedFloat64Array = _sim.routes.points[r]
+			var len: float = 0.0
+			var px: float = _sim.routes.start_x[r]
+			var pz: float = _sim.routes.start_z[r]
+			for i: int in range(0, pts.size(), 2):
+				len += Vector2(pts[i] - px, pts[i + 1] - pz).length()
+				px = pts[i]
+				pz = pts[i + 1]
+			_long_lengths[k] = len
+		elif r != 0:
+			pending = true
+	if pending or _long_tick_usec.size() < 5:
+		_long_tick_usec.append(tick_usec)
+
+
+func _long_result() -> Dictionary:
+	if _long_routes <= 0:
+		return {}
+	var lengths := PackedFloat64Array()
+	for v: float in _long_lengths:
+		lengths.append(snappedf(v, 1.0))
+	return {
+		"routes": _long_routes,
+		"route_length_m": lengths,
+		"ticks_until_ready": _long_ready_ticks,
+		"tick_ms_while_searching": _stats_ms(_long_tick_usec),
+	}
 
 
 func _spawn_armies(players: int, units: int) -> void:

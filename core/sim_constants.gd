@@ -34,6 +34,18 @@ const MAX_DEF_INDEX: int = 1023
 const MAX_IDS_PER_COMMAND: int = 512
 ## Un MOVE/ATTACK_MOVE con al menos este número de unidades crea un grupo de movimiento interno.
 const MOVE_GROUP_MIN_UNITS: int = 8
+## Régimen de marcha (T-018, Q-010, ADR-012): una orden MOVE (no ATTACK_MOVE ni ATTACK) cuyo
+## destino está al menos a esta distancia (m) del centro de las unidades admite la marcha.
+const MARCH_MIN_ORDER_DIST: float = 200.0
+## Un enemigo a menos de esta distancia (m) de una unidad de la orden pone la ruta en alerta:
+## velocidad táctica durante MARCH_ALERT_TICKS (se renueva mientras siga cerca).
+const MARCH_ENEMY_RADIUS: float = 150.0
+const MARCH_ALERT_TICKS: int = 20
+## Órdenes encoladas con Shift: máximo por unidad (las que pasen se descartan).
+const MAX_QUEUED_ORDERS: int = 16
+## Una orden encolada arranca cuando todas sus unidades la tienen como siguiente y están libres,
+## o cuando pasaron estos ticks desde que la primera quedó libre (reagrupar en el punto de paso).
+const QUEUE_REGROUP_TICKS: int = 40
 ## Límite de comandos por jugador y segundo (RATE_LIMIT).
 const RATE_LIMIT_COMMANDS_PER_SEC: int = 30
 ## Límite de bytes de comandos por jugador y segundo (lo aplica MatchServer al recibir).

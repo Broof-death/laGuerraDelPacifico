@@ -18,3 +18,5 @@ ExtResource("3_uqm53"): 50
 placeholder_shape = 2
 placeholder_size = Vector3(1, 2, 1)
 placeholder_label = "INF"
+march_speed = 10.0
+turn_rate = 360.0
