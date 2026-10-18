@@ -130,6 +130,12 @@ func _apply_command(_player_id: int, cmd: Command) -> void:
 			_apply_move(cmd)
 		Command.Type.STOP:
 			_apply_stop(cmd)
+		Command.Type.ATTACK:
+			# PROVISIONAL (T-007), hasta que exista el combate: ir a donde está el objetivo ahora.
+			var t: int = store.slot_of(cmd.target_id)
+			if t >= 0:
+				var move := Command.make_move(cmd.seq, cmd.entity_ids, Vector2(store.pos_x[t], store.pos_z[t]))
+				_apply_move(move)
 
 
 func _apply_move(cmd: Command) -> void:

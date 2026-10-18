@@ -8,7 +8,8 @@ class_name RtsCamera
 ## detrás y arriba del pivote según el zoom.
 ##
 ## Controles (acciones camera_* del InputMap):
-## - WASD o flechas: desplazar. También el borde de la pantalla (desactivable).
+## - Flechas: desplazar. También el borde de la pantalla (desactivable). WASD dejó de mover la
+##   cámara en T-007: A y S son órdenes (ataque en movimiento y alto).
 ## - Botón central + arrastrar: arrastrar el mapa.
 ## - Alt + botón central + arrastrar, o Q / E: rotar.
 ## - Rueda: zoom suavizado; la inclinación cambia con el zoom.

@@ -200,7 +200,7 @@ theme_override_styles/panel = SubResource("panel_style")
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "Cámara RTS (prueba de T-006)
-WASD / flechas: mover    ratón al borde: mover
+Flechas: mover    ratón al borde: mover
 Botón central + arrastrar: arrastrar el mapa
 Q / E  o  Alt + botón central: rotar
 Rueda: zoom (cambia la inclinación)

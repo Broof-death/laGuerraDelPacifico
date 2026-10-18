@@ -376,3 +376,24 @@ func test_tick_accumulator_caps_ticks_per_frame() -> void:
 	assert_int(acc.dropped_ticks).is_equal(20 - SimConstants.MAX_TICKS_PER_FRAME)
 	acc.time_scale = 0.0
 	assert_int(acc.advance(1.0)).is_equal(0)
+
+
+# --- ATTACK provisional (T-007) -------------------------------------------------
+
+func test_attack_moves_towards_target_until_combat_exists() -> void:
+	var sim := SimTestHelpers.make_sim()
+	var mine := _spawn_line(sim, 1, 2, 100.0, 100.0)
+	var theirs := _spawn_line(sim, 2, 1, 160.0, 100.0)
+	var cmd := Command.new()
+	cmd.type = Command.Type.ATTACK
+	cmd.seq = 1
+	cmd.entity_ids = mine
+	cmd.target_id = theirs[0]
+	assert_int(sim.submit_command(1, cmd)).is_equal(Command.Reject.OK)
+	sim.step()
+	var s: int = sim.store.slot_of(mine[0])
+	assert_int(sim.store.action[s]).is_equal(SimConstants.Action.MOVE)
+	assert_float(sim.store.dest_x[s]).is_equal_approx(160.0, 0.01)
+	# Objetivo inexistente.
+	cmd.target_id = 999
+	assert_int(sim.submit_command(1, cmd)).is_equal(Command.Reject.UNKNOWN_ENTITY)

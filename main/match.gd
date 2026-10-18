@@ -5,8 +5,8 @@ extends Node
 ##   JOIN       MatchClient con ENetTransport
 ##   DEDICATED  MatchServer con ENetTransport, sin cliente (--server)
 ## Con ventana y cliente (T-017) arma también lo visible: el escenario provisional
-## (client/world/battlefield.tscn, con la cámara RTS), el UnitBatchRenderer sobre el ClientState y
-## las órdenes de prueba (TestOrders). En el modo de un jugador agrega los extras de prueba y el
+## (client/world/battlefield.tscn, con la cámara RTS), el UnitBatchRenderer sobre el ClientState,
+## la selección y las órdenes (SelectionController, T-007) y el texto de controles (TestOrders). En el modo de un jugador agrega los extras de prueba y el
 ## bot mínimo de TestSkirmish. Sin ventana (headless) solo muestra un texto de estado.
 ## Argumentos extra para capturas: --zoom=0..1, --yaw=grados, --focus=x,z.
 
@@ -16,6 +16,7 @@ var client: MatchClient
 var _elapsed: float = 0.0
 var renderer: UnitBatchRenderer
 var skirmish: TestSkirmish
+var selection: SelectionController
 var _status: Label
 var _status_timer: float = 0.0
 
@@ -97,6 +98,10 @@ func _start_views(data: GameData) -> void:
 	renderer.name = "Unidades"
 	add_child(renderer)
 	renderer.setup(client.state, ViewCatalog.new(data))
+	selection = SelectionController.new()
+	selection.name = "Seleccion"
+	add_child(selection)
+	selection.setup(client, data, cam, renderer)
 	var orders := TestOrders.new()
 	orders.setup(client, data, renderer)
 	add_child(orders)
