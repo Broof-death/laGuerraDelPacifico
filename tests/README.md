@@ -7,6 +7,14 @@
   que nunca pisan terreno prohibido en ningún tick, destino ajustado o rechazado (`UNREACHABLE`),
   determinismo, 8 búsquedas por tick, una ruta por grupo, HPA* frente a A* plano en un mapa chico
   (imprime `HPA_VS_ASTAR`) y tiempos de búsqueda y memoria (imprime `PATH_PERF` y `MAP_MEMORY`).
+- `tests/sim/test_movement.gd` (T-018): formaciones (filas y columnas según el radio, puestos por
+  avance), grupo que llega en formación sin solaparse, las rápidas esperan a las lentas, evitación
+  (amontonadas que se separan, columna que atraviesa un bloque quieto), nadie pisa agua por
+  empuje (comprobado en cada tick), costo no cuadrático, régimen de marcha (rampa, órdenes cortas y
+  ATTACK_MOVE tácticas, enemigo cerca), giro antes de avanzar, cola de órdenes con Shift y
+  determinismo. En `test_pathing.gd`: búsqueda incremental igual a la completa con varios
+  presupuestos, 8 rutas de más de 30 km en un tick dentro del presupuesto (imprime `PATH_BUDGET`)
+  y reparto determinista de las búsquedas entre ticks.
 - `tests/core/`: pruebas unitarias del código compartido: BitWriter/BitReader, códec de comandos y
   códec de snapshots (ida y vuelta, delta contra ack, acks y paquetes perdidos, tope de 4 KB).
 - `tests/client/`: pruebas unitarias de las vistas del cliente sin GPU (T-017): mallas provisionales,
@@ -21,7 +29,9 @@
   (`-- --out=ruta.png --zoom=0.36 --focus=60,0 --yaw=0`).
 - `tests/sandbox/route_capture.tscn` (con ventana, T-013): partida local sobre el mapa provisional;
   ordena a las tropas del jugador 1 ir detrás del cerro de prueba, dibuja la ruta en amarillo,
-  adelanta la simulación y guarda una captura (`-- --out=ruta.png`).
+  adelanta la simulación y guarda una captura (`-- --out=ruta.png`). Con `--mode=formation`
+  (T-018) las manda a campo abierto, espera a que lleguen y captura el bloque en formación con el
+  puesto de cada unidad marcado (sale con 1 si alguna no llegó o quedó encimada).
 - `tests/tools/build_test_map.gd`: regenera el mapa provisional de `data/map/` (MapDef, sectores
   y grafos del HPA*): `godot --headless --path . -s res://tests/tools/build_test_map.gd`.
 - `tests/load/`: prueba de carga headless de ADR-006 (no usa gdUnit4) y prueba de render del cliente

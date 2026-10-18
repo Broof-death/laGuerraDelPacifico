@@ -9,6 +9,8 @@ godot --headless --path . res://tests/load/load_test.tscn -- --players=6 --units
 # Red: --loss=0.02 (pérdida en snapshots y acks), --ghosts=0 (sin clientes fantasma),
 # --radius=200 (radio del círculo inicial, en m)
 # Rutas (T-013): --map=0 (sin mapa lógico), --path_stress=1 (el micro manda a puntos de hasta ~3 km)
+# T-018: --long_routes=8 (8 escuadras piden en el mismo tick rutas de más de 30 km),
+#        --avoid=0 (sin evitación local, para comparar)
 ```
 
 - Desde T-013 la simulación usa el mapa lógico provisional (`data/map/`): rutas por tierra y mar
@@ -120,6 +122,34 @@ tierra, a 200 m del origen; la costa está en x ≈ 250). Tiempos en ms.
   unidades a la vez.
 - Antigüedad en combate: el máximo de 400 ms (umbral de 300) también sale en `develop` (59f2972)
   sin T-013, con la misma semilla: no lo causa el mapa. Queda anotado para revisar aparte.
+
+### T-018: formaciones, evitación local, giro, marcha y presupuesto de rutas (17-10-2026)
+
+Mismo PC y binario, semilla 1, 120 s, 2 % de pérdida, mapa provisional. Tiempos en ms. "mov+evit"
+es movimiento + evitación local medidos juntos por tick. Las rutas tienen un presupuesto de
+1200 unidades de trabajo por tick (`RouteStore.WORK_PER_TICK`).
+
+| Escenario | tick p50 | tick p95 | tick p99 | tick máx | mov+evit p50 / p95 / máx | rutas p95 / p99 / máx | snapshots p95 | KB/s batalla | antigüedad combate p99 / máx | Cumple |
+|---|---|---|---|---|---|---|---|---|---|---|
+| S1 2 x 500 | 3,82 | 5,62 | 6,16 | 6,63 | 1,57 / 2,23 / 3,42 | 0,10 / 0,14 / 0,23 | 2,32 | 1,8 | 200 / 300 ms | Sí (6) |
+| S2 6 x 500 | 15,49 | **18,94** | 20,10 | 23,11 | 5,10 / 6,49 / 7,86 | 0,24 / 0,31 / 0,56 | 12,49 | 7,9 | 200 / 400 ms | Tick sí; antigüedad 400 ms (como en develop) |
+| S2 + `--path_stress=1` | 15,97 | 19,57 | 21,06 | 23,26 | 5,21 / 6,46 / 9,95 | 1,84 / **3,17** / 5,10 | 12,57 | 8,1 | 200 / 400 ms | Tick p95 sí; máx. 23,3 (meta 20) |
+| S2 + `--long_routes=8` | 16,18 | 20,38 | 21,63 | 30,80 | 5,17 / 6,54 / 8,31 | 0,96 / 0,96 / 1,97 | 12,96 | 9,8 | 200 / 400 ms | Tick p95 20,4 (justo); máx. 30,8 |
+| S2 `--avoid=0` (comparación) | 12,15 | 15,38 | 16,16 | 18,49 | 2,29 / 3,42 / 4,97 | 0,25 / 0,31 / 0,57 | 11,95 | 4,2 | 200 / 400 ms | — |
+| develop (antes de T-018), S2 | 9,03 | 10,70 | 12,59 | 16,00 | 1,54 (solo mov.) | 0,11 / 0,14 / 0,28 | 8,34 | 3,3 | 200 / 400 ms | — |
+| develop, S2 + `--path_stress=1` | 9,67 | 13,05 | 17,76 | 24,78 | 1,63 (solo mov.) | 1,01 / 6,09 / 12,54 | 8,47 | 3,3 | 200 / 400 ms | — |
+
+- Rutas: el presupuesto deja "rutas" en p99 3,2 ms con `path_stress` (antes 6,1, máx. 12,5). Con
+  `--long_routes=8` las 8 búsquedas (30,6 a 32,3 km) quedan listas entre 20 y 142 ticks (1 a 7 s
+  después de la orden, una tras otra) y el sistema de rutas no pasa de 2 ms en ningún tick.
+- El tick máximo de 20 ms con `path_stress` y con las 8 rutas largas NO se cumple: las rutas ya
+  no son la causa (máx. 2-5 ms), sino el costo nuevo de movimiento + evitación (~5 ms de p50) y de
+  los snapshots, que crecen porque giros, rampas y empujones reancla más trayectorias (KB/s de 3,3
+  a 8: muy por debajo del umbral de 25).
+- La evitación escalona los pares quieta-quieta y en movimiento-en movimiento en 4 fases (cada
+  par cada 4 ticks); la de en movimiento contra quieta va a 20 Hz. Enemigos que se mueven los dos
+  se atraviesan (provisional hasta el combate). Ver `sim/systems/avoidance_system.gd`.
+- Antigüedad máxima de 400 ms en combate: igual que en develop (pendiente de T-020).
 
 # Prueba de carga del render del cliente (T-017, ADR-006 punto 7, ADR-010 punto 5)
 
