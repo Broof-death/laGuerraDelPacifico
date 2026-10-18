@@ -15,6 +15,14 @@ extends RefCounted
 ## 5. Suavizado (string pulling): se saltan los puntos intermedios mientras el segmento siga siendo
 ##    transitable (supercover: nunca roza una celda prohibida), en tramos de hasta SMOOTH_MAX m.
 ## Determinista: mismas entradas, misma ruta (colas con desempate por índice, sin azar).
+##
+## BÚSQUEDA INCREMENTAL (T-018): cada búsqueda es un Job con su propio estado (cola, g, padre,
+## cadena, puntos) que avanza por etapas (INIT -> CONNECT -> ABSTRACT -> REFINE -> SMOOTH) con un
+## presupuesto de trabajo. El trabajo se CUENTA en unidades deterministas (WORK_*: nodos del A*
+## abstracto, aristas, celdas de los A* locales y de los segmentos recorridos...), nunca con el
+## reloj, así que el reparto entre ticks es igual en cualquier máquina. Las unidades están
+## calibradas para que 1 unidad cueste ~1 µs en el binario de depuración del PC de referencia.
+## find() hace la búsqueda completa de una vez (presupuesto ilimitado) por el mismo camino.
 
 const SNAP_RADIUS_CELLS: int = 64
 const DIRECT_MAX: float = 4096.0
@@ -28,6 +36,81 @@ const CLEARANCE: float = 6.0
 const ABSTRACT_HEURISTIC: PackedFloat32Array = [1.25, 1.25]
 
 enum Kind { NONE, DIRECT, LOCAL, HPA }
+enum Stage { INIT, SNAP_START, SNAP_GOAL, DIRECT, CONNECT_START, CONNECT_GOAL, ABSTRACT, REFINE, SMOOTH, DONE }
+
+## Unidades de trabajo (≈ µs; ver arriba). Pasos: inicio, tramo del refinamiento y candidato del
+## suavizado; nodo sacado de la cola del A* abstracto y arista revisada (con su posible entrada en
+## la cola); nodo metido en la cola al conectar el origen;
+## celda expandida por un A* o Dijkstra local (con sus 8 vecinos) y celda preparada de la ventana
+## de costos; celdas de 16 m recorridas por un segmento (cada WORK_SEG_DIV celdas, 1 unidad);
+## celdas revisadas al buscar la celda válida más cercana (cada WORK_NEAR_DIV, 1 unidad); y el
+## arranque del A* abstracto (cada WORK_ALLOC_DIV nodos del grafo, 1 unidad).
+const WORK_STEP: int = 4
+const WORK_POP: int = 1
+const WORK_EDGE: int = 1
+const WORK_PUSH: int = 1
+const WORK_LOCAL_CELL: int = 3
+const WORK_REGION_CELL_DIV: int = 2
+const WORK_SEG_DIV: int = 4
+const WORK_NEAR_DIV: int = 2
+const WORK_ALLOC_DIV: int = 256
+const UNLIMITED: int = 0x7FFFFFFFFFFF
+const OPENED: int = 1
+const CLOSED: int = 2
+
+## Búsqueda incremental: estado completo de una búsqueda a medias.
+class Job:
+	var layer: int = 0
+	var sx: float = 0.0
+	var sz: float = 0.0
+	var tx: float = 0.0
+	var tz: float = 0.0
+	var stage: int = 0
+	var res: Result = Result.new()
+	## Trabajo acumulado (unidades WORK_*).
+	var work: int = 0
+	var s_cell: Vector2i
+	var g_cell: Vector2i
+	var start: Vector2
+	var goal: Vector2
+	## Puntos antes del suavizado (desde el origen).
+	var pts: PackedVector2Array = PackedVector2Array()
+	# A* abstracto.
+	var graph: PathGraph
+	var node_s: int = 0
+	var node_g: int = 0
+	var hk: float = 1.0
+	var heap: PackedInt64Array = PackedInt64Array()
+	var ag: PackedFloat32Array = PackedFloat32Array()
+	var aparent: PackedInt32Array = PackedInt32Array()
+	## 0 = sin ver, OPENED, CLOSED.
+	var astate: PackedByteArray = PackedByteArray()
+	var goal_extra: Dictionary[int, float] = {}
+	# Refinamiento.
+	var chain: Array[Vector2i] = []
+	var ri: int = 0
+	var prev_cell: Vector2i
+	var prev_pt: Vector2
+	# Suavizado: punto de salida actual, candidato j y mejor visible hasta ahora.
+	var sm_out: PackedVector2Array = PackedVector2Array()
+	var sm_i: int = 0
+	var sm_j: int = 0
+	var sm_best: int = 0
+	# Búsqueda de la celda válida más cercana (un anillo por paso).
+	var near_around: Vector2i
+	var near_x: float = 0.0
+	var near_z: float = 0.0
+	var near_comp: int = 0
+	var near_match: bool = false
+	var near_r: int = 0
+	var near_best: Vector2i
+	var near_best_d: float = INF
+	var comp: int = 0
+	# Conexión al grafo: [nodos, costos] del origen.
+	var from_s: Array = []
+
+	func is_done() -> bool:
+		return stage == Stage.DONE
 
 ## Resultado de una búsqueda.
 class Result:
@@ -43,9 +126,6 @@ class Result:
 	## Nodos abstractos expandidos (HPA*) y celdas expandidas en búsquedas locales.
 	var abstract_expanded: int = 0
 	var local_expanded: int = 0
-	## Tiempos parciales (µs): A* abstracto y suavizado.
-	var usec_abstract: int = 0
-	var usec_smooth: int = 0
 
 	func length_from(sx: float, sz: float) -> float:
 		var total: float = 0.0
@@ -62,110 +142,385 @@ var map: LogicMap
 ## Etiquetas de componente por celda de los clusters MIXED, calculadas a pedido
 ## (clave = capa * 65536 + cluster).
 var _labels: Dictionary[int, PackedInt32Array] = {}
-# Arrays del A* abstracto, reutilizados entre búsquedas (con sello de búsqueda).
-var _ag: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
-var _aparent: Array[PackedInt32Array] = [PackedInt32Array(), PackedInt32Array()]
-var _astamp: Array[PackedInt32Array] = [PackedInt32Array(), PackedInt32Array()]
-var _aclosed: Array[PackedInt32Array] = [PackedInt32Array(), PackedInt32Array()]
-var _stamp: int = 0
+## Trabajo contado (unidades WORK_*), acumulado desde que se creó el buscador.
+var _work: int = 0
+## Caché de costos por cluster (_cluster_costs): clave -> costos, y orden de entrada (FIFO).
+const COST_CACHE_MAX: int = 1024
+var _cost_cache: Dictionary[int, PackedFloat32Array] = {}
+var _cost_cache_order := PackedInt32Array()
+var _cost_cache_head: int = 0
 
 
 func _init(p_map: LogicMap) -> void:
 	map = p_map
 
 
-## Ruta de (sx, sz) a (tx, tz) para la capa.
+## Ruta de (sx, sz) a (tx, tz) para la capa, completa en una sola llamada (sin presupuesto).
+## Es lo mismo que crear un Job y avanzarlo hasta el final: da exactamente la misma ruta que la
+## búsqueda incremental de RouteStore.
 func find(layer: int, sx: float, sz: float, tx: float, tz: float) -> Result:
-	var res := Result.new()
-	var graph: PathGraph = map.graph(layer)
-	# 1) Origen.
-	var s_cell := Vector2i(MapGrid.terrain_index(sx), MapGrid.terrain_index(sz))
-	var start := Vector2(sx, sz)
-	if not map.passable_cell(layer, s_cell.x, s_cell.y):
-		s_cell = _nearest(layer, s_cell, sx, sz, 0, false)
-		if s_cell.x < 0:
-			res.reason = Command.Reject.UNREACHABLE
-			return res
-		start = _center(s_cell)
-	var comp: int = component_of(layer, s_cell.x, s_cell.y)
-	# Destino.
-	var g_cell := Vector2i(MapGrid.terrain_index(tx), MapGrid.terrain_index(tz))
-	var goal := Vector2(tx, tz)
-	if not map.passable_cell(layer, g_cell.x, g_cell.y) or component_of(layer, g_cell.x, g_cell.y) != comp:
-		g_cell = _nearest(layer, g_cell, tx, tz, comp, true)
-		if g_cell.x < 0:
-			res.reason = Command.Reject.UNREACHABLE
-			return res
-		goal = _center(g_cell)
-		res.adjusted = true
-	res.goal = goal
-	# 2) Recta.
+	var job := start_job(layer, sx, sz, tx, tz)
+	advance(job, UNLIMITED)
+	return job.res
+
+
+## Crea una búsqueda incremental (todavía no hace trabajo).
+func start_job(layer: int, sx: float, sz: float, tx: float, tz: float) -> Job:
+	var job := Job.new()
+	job.layer = layer
+	job.sx = sx
+	job.sz = sz
+	job.tx = tx
+	job.tz = tz
+	return job
+
+
+## Avanza la búsqueda hasta terminarla o hasta gastar `budget` unidades de trabajo (WORK_*).
+## Los pasos atómicos (un A* local, la conexión al grafo, un punto del suavizado...) no se parten,
+## así que puede pasarse un poco del presupuesto: devuelve el trabajo realmente hecho (RouteStore
+## descuenta el exceso del tick siguiente). Determinista: el trabajo se cuenta, no se mide con el
+## reloj, y la ruta no depende de cómo se reparta la búsqueda entre ticks.
+func advance(job: Job, budget: int) -> int:
+	var w0: int = _work
+	while job.stage != Stage.DONE and _work - w0 < budget:
+		match job.stage:
+			Stage.INIT:
+				_stage_init(job)
+			Stage.SNAP_START:
+				_stage_snap_start(job)
+			Stage.SNAP_GOAL:
+				_stage_snap_goal(job)
+			Stage.DIRECT:
+				_stage_direct(job)
+			Stage.CONNECT_START:
+				_stage_connect_start(job)
+			Stage.CONNECT_GOAL:
+				_stage_connect_goal(job)
+			Stage.ABSTRACT:
+				_stage_abstract(job, budget - (_work - w0))
+			Stage.REFINE:
+				_stage_refine(job)
+			Stage.SMOOTH:
+				_stage_smooth(job)
+	var used: int = _work - w0
+	job.work += used
+	return used
+
+
+## Trabajo total contado por este buscador (estadística).
+func total_work() -> int:
+	return _work
+
+
+func _finish_fail(job: Job) -> void:
+	job.res.ok = false
+	job.res.reason = Command.Reject.UNREACHABLE
+	job.stage = Stage.DONE
+	_release(job)
+
+
+func _release(job: Job) -> void:
+	job.heap = PackedInt64Array()
+	job.ag = PackedFloat32Array()
+	job.aparent = PackedInt32Array()
+	job.astate = PackedByteArray()
+	job.goal_extra = {}
+
+
+## 1) Origen: si cae en una celda intransitable, busca la más cercana (anillo por anillo).
+func _stage_init(job: Job) -> void:
+	_work += WORK_STEP
+	job.s_cell = Vector2i(MapGrid.terrain_index(job.sx), MapGrid.terrain_index(job.sz))
+	job.start = Vector2(job.sx, job.sz)
+	if map.passable_cell(job.layer, job.s_cell.x, job.s_cell.y):
+		_begin_goal(job)
+		return
+	_near_begin(job, job.s_cell, job.sx, job.sz, 0, false)
+	job.stage = Stage.SNAP_START
+
+
+func _stage_snap_start(job: Job) -> void:
+	if not _near_step(job):
+		return
+	if job.near_best.x < 0:
+		_finish_fail(job)
+		return
+	job.s_cell = job.near_best
+	job.start = _center(job.s_cell)
+	_begin_goal(job)
+
+
+## Destino: si es inválido (tropa al mar, buque a tierra) o de otra componente, se ajusta a la
+## celda válida más cercana de la componente del origen.
+func _begin_goal(job: Job) -> void:
+	var layer: int = job.layer
+	job.comp = component_of(layer, job.s_cell.x, job.s_cell.y)
+	job.g_cell = Vector2i(MapGrid.terrain_index(job.tx), MapGrid.terrain_index(job.tz))
+	job.goal = Vector2(job.tx, job.tz)
+	if not map.passable_cell(layer, job.g_cell.x, job.g_cell.y) or component_of(layer, job.g_cell.x, job.g_cell.y) != job.comp:
+		_near_begin(job, job.g_cell, job.tx, job.tz, job.comp, true)
+		job.stage = Stage.SNAP_GOAL
+		return
+	job.res.goal = job.goal
+	job.stage = Stage.DIRECT
+
+
+func _stage_snap_goal(job: Job) -> void:
+	if not _near_step(job):
+		return
+	if job.near_best.x < 0:
+		_finish_fail(job)
+		return
+	job.g_cell = job.near_best
+	job.goal = _center(job.g_cell)
+	job.res.adjusted = true
+	job.res.goal = job.goal
+	job.stage = Stage.DIRECT
+
+
+## 2) Recta; 3) mismo cluster (A* local). Si no, pasa al HPA*.
+func _stage_direct(job: Job) -> void:
+	var res := job.res
+	var layer: int = job.layer
+	var start: Vector2 = job.start
+	var goal: Vector2 = job.goal
+	_work += WORK_STEP
 	if start.distance_to(goal) <= DIRECT_MAX and _seg(layer, start.x, start.y, goal.x, goal.y):
 		res.ok = true
 		res.kind = Kind.DIRECT
-		if start != Vector2(sx, sz):
+		if start != Vector2(job.sx, job.sz):
 			res.points.append_array([start.x, start.y])
 		res.points.append_array([goal.x, goal.y])
-		return res
-	var pts := PackedVector2Array([start])
-	# 3) Mismo cluster.
-	var sc: int = PathGraph.cluster_of_cell(s_cell.x, s_cell.y)
-	var gc: int = PathGraph.cluster_of_cell(g_cell.x, g_cell.y)
-	var done: bool = false
+		job.stage = Stage.DONE
+		return
+	job.pts = PackedVector2Array([start])
+	var sc: int = PathGraph.cluster_of_cell(job.s_cell.x, job.s_cell.y)
+	var gc: int = PathGraph.cluster_of_cell(job.g_cell.x, job.g_cell.y)
 	if sc == gc:
-		var local := _local_path(layer, sc, s_cell, g_cell)
+		var local := _local_path(layer, sc, job.s_cell, job.g_cell)
 		res.local_expanded += GridSearch.last_expanded
 		if not local.is_empty():
 			for k: int in range(1, local.size() - 1):
-				pts.append(_center(local[k]))
+				job.pts.append(_center(local[k]))
 			res.kind = Kind.LOCAL
-			done = true
+			_begin_smooth(job)
+			return
 	# 4) HPA*.
-	if not done:
-		if graph == null:
-			res.reason = Command.Reject.UNREACHABLE
-			return res
-		var ta: int = Time.get_ticks_usec()
-		var abstract := _abstract_path(layer, graph, s_cell, g_cell, res)
-		res.usec_abstract = Time.get_ticks_usec() - ta
-		if abstract.is_empty():
-			res.reason = Command.Reject.UNREACHABLE
-			return res
-		res.kind = Kind.HPA
-		# Refinamiento: abstract trae las celdas de los nodos (sin origen ni destino).
-		var prev_cell := s_cell
-		var prev_pt := start
+	job.graph = map.graph(layer)
+	if job.graph == null:
+		_finish_fail(job)
+		return
+	job.stage = Stage.CONNECT_START
+
+
+## Costos del origen a los nodos de su cluster.
+func _stage_connect_start(job: Job) -> void:
+	job.from_s = _connect(job.layer, job.graph, job.s_cell)
+	if (job.from_s[0] as PackedInt32Array).is_empty():
+		_finish_fail(job)
+		return
+	job.stage = Stage.CONNECT_GOAL
+
+
+## Costos del destino a los nodos de su cluster, y arranque del A* abstracto.
+func _stage_connect_goal(job: Job) -> void:
+	var graph: PathGraph = job.graph
+	var to_g: Array = _connect(job.layer, graph, job.g_cell)
+	if (to_g[0] as PackedInt32Array).is_empty():
+		_finish_fail(job)
+		return
+	var n: int = graph.node_count()
+	job.node_s = n
+	job.node_g = n + 1
+	# Estado propio de la búsqueda (no compartido): una búsqueda puede quedar a medias entre ticks.
+	job.ag.resize(n + 2)
+	job.aparent.resize(n + 2)
+	job.astate.resize(n + 2)
+	job.astate.fill(0)
+	_work += (n + 2) / WORK_ALLOC_DIV
+	var tg_nodes: PackedInt32Array = to_g[0]
+	var tg_costs: PackedFloat32Array = to_g[1]
+	for i: int in tg_nodes.size():
+		job.goal_extra[tg_nodes[i]] = tg_costs[i]
+	job.hk = ABSTRACT_HEURISTIC[job.layer]
+	var S: int = job.node_s
+	job.ag[S] = 0.0
+	job.astate[S] = OPENED
+	job.aparent[S] = -1
+	var fs_nodes: PackedInt32Array = job.from_s[0]
+	var fs_costs: PackedFloat32Array = job.from_s[1]
+	job.from_s = []
+	var gx: int = job.g_cell.x
+	var gz: int = job.g_cell.y
+	for i: int in fs_nodes.size():
+		var v: int = fs_nodes[i]
+		var ng: float = fs_costs[i]
+		if job.astate[v] == 0 or ng < job.ag[v]:
+			job.astate[v] = OPENED
+			job.ag[v] = ng
+			job.aparent[v] = S
+			var cell: int = graph.node_cell[v]
+			GridSearch.heap_push(job.heap, int((ng + GridSearch.octile(cell % LogicMap.SIDE - gx, cell / LogicMap.SIDE - gz) * job.hk) * GridSearch.KEY_SCALE), v)
+	_work += fs_nodes.size() * WORK_PUSH + tg_nodes.size()
+	job.stage = Stage.ABSTRACT
+
+
+## A* sobre el grafo de portales, interrumpible entre expansiones.
+func _stage_abstract(job: Job, budget: int) -> void:
+	var graph: PathGraph = job.graph
+	var g := job.ag
+	var parent := job.aparent
+	var state := job.astate
+	var heap := job.heap
+	var goal_extra := job.goal_extra
+	var starts := graph.edge_start
+	var tos := graph.edge_to
+	var ecost := graph.edge_cost
+	var ncell := graph.node_cell
+	var G: int = job.node_g
+	var hk: float = job.hk
+	var gx: int = job.g_cell.x
+	var gz: int = job.g_cell.y
+	const SIDE: int = LogicMap.SIDE
+	const KS: float = GridSearch.KEY_SCALE
+	const STEP: float = GridSearch.STEP
+	const DIAG: float = GridSearch.DIAG_STEP
+	var work: int = 0
+	var expanded: int = 0
+	var found: bool = false
+	while not heap.is_empty() and work < budget:
+		var v: int = GridSearch.heap_pop(heap)
+		work += WORK_POP
+		if state[v] == CLOSED:
+			continue
+		state[v] = CLOSED
+		expanded += 1
+		if v == G:
+			found = true
+			break
+		var gv: float = g[v]
+		if goal_extra.has(v):
+			var ng: float = gv + goal_extra[v]
+			if state[G] == 0 or ng < g[G]:
+				state[G] = OPENED
+				g[G] = ng
+				parent[G] = v
+				GridSearch.heap_push(heap, int(ng * KS), G)
+		var e0: int = starts[v]
+		var e1: int = starts[v + 1]
+		work += (e1 - e0) * WORK_EDGE
+		for k: int in range(e0, e1):
+			var u: int = tos[k]
+			var su: int = state[u]
+			if su == CLOSED:
+				continue
+			var ng: float = gv + ecost[k]
+			if su == 0 or ng < g[u]:
+				state[u] = OPENED
+				g[u] = ng
+				parent[u] = v
+				var cell: int = ncell[u]
+				# Octil en línea (es el bucle caliente).
+				var ax: int = absi(cell % SIDE - gx)
+				var az: int = absi(cell / SIDE - gz)
+				var h: float = STEP * absi(ax - az) + DIAG * mini(ax, az)
+				GridSearch.heap_push(heap, int((ng + h * hk) * KS), u)
+	_work += work
+	job.res.abstract_expanded += expanded
+	if found:
 		var chain: Array[Vector2i] = []
-		chain.append_array(abstract)
-		chain.append(g_cell)
-		for i: int in chain.size():
-			var cell: Vector2i = chain[i]
-			var pt: Vector2 = goal if i == chain.size() - 1 else _center(cell)
-			if not _seg(layer, prev_pt.x, prev_pt.y, pt.x, pt.y):
-				var c: int = PathGraph.cluster_of_cell(prev_cell.x, prev_cell.y)
-				if c == PathGraph.cluster_of_cell(cell.x, cell.y):
-					var local := _local_path(layer, c, prev_cell, cell)
-					res.local_expanded += GridSearch.last_expanded
-					for k: int in range(1, local.size() - 1):
-						pts.append(_center(local[k]))
-			if i < chain.size() - 1:
-				pts.append(pt)
-			prev_cell = cell
-			prev_pt = pt
-	pts.append(goal)
-	# 5) Suavizado.
-	var tsm: int = Time.get_ticks_usec()
-	var smooth := _string_pull(layer, pts)
-	res.usec_smooth = Time.get_ticks_usec() - tsm
+		var cur: int = parent[G]
+		while cur != job.node_s and cur >= 0:
+			var cell: int = ncell[cur]
+			chain.append(Vector2i(cell % SIDE, cell / SIDE))
+			cur = parent[cur]
+		chain.reverse()
+		_work += chain.size()
+		_release(job)
+		job.res.kind = Kind.HPA
+		# Refinamiento: la cadena trae las celdas de los nodos (sin el origen) y el destino.
+		chain.append(job.g_cell)
+		job.chain = chain
+		job.ri = 0
+		job.prev_cell = job.s_cell
+		job.prev_pt = job.start
+		job.stage = Stage.REFINE
+	elif heap.is_empty():
+		_finish_fail(job)
+
+
+## Refinamiento de un tramo de la cadena abstracta por paso: A* local solo en los tramos que no se
+## pueden recorrer en línea recta.
+func _stage_refine(job: Job) -> void:
+	var layer: int = job.layer
+	var chain := job.chain
+	var i: int = job.ri
+	var cell: Vector2i = chain[i]
+	var last: bool = i == chain.size() - 1
+	var pt: Vector2 = job.goal if last else _center(cell)
+	var prev_cell: Vector2i = job.prev_cell
+	var prev_pt: Vector2 = job.prev_pt
+	_work += WORK_STEP
+	if not _seg(layer, prev_pt.x, prev_pt.y, pt.x, pt.y):
+		var c: int = PathGraph.cluster_of_cell(prev_cell.x, prev_cell.y)
+		if c == PathGraph.cluster_of_cell(cell.x, cell.y):
+			var local := _local_path(layer, c, prev_cell, cell)
+			job.res.local_expanded += GridSearch.last_expanded
+			for k: int in range(1, local.size() - 1):
+				job.pts.append(_center(local[k]))
+	if not last:
+		job.pts.append(pt)
+	job.prev_cell = cell
+	job.prev_pt = pt
+	job.ri = i + 1
+	if job.ri >= chain.size():
+		job.chain = []
+		_begin_smooth(job)
+
+
+func _begin_smooth(job: Job) -> void:
+	job.pts.append(job.goal)
+	job.sm_out = PackedVector2Array([job.pts[0]])
+	job.sm_i = 0
+	job.sm_best = 1
+	job.sm_j = 2
+	job.stage = Stage.SMOOTH
+
+
+## 5) Suavizado (string pulling): desde cada punto, salta al más lejano visible (segmento
+## transitable con holgura) sin pasar de SMOOTH_MAX metros. Un candidato por paso.
+func _stage_smooth(job: Job) -> void:
+	var pts := job.pts
+	var last: int = pts.size() - 1
+	var i: int = job.sm_i
+	if i < last:
+		var j: int = job.sm_j
+		_work += WORK_STEP
+		if j <= last and pts[i].distance_to(pts[j]) <= SMOOTH_MAX and j - job.sm_best <= 4:
+			if _wide_passable(job.layer, pts[i], pts[j]):
+				job.sm_best = j
+			job.sm_j = j + 1
+			return
+		# Ya no se ve desde hace varios puntos (o se terminó): avanza al mejor.
+		var best: int = job.sm_best
+		job.sm_out.append(pts[best])
+		job.sm_i = best
+		job.sm_best = best + 1
+		job.sm_j = best + 2
+		return
+	var res := job.res
+	var smooth := job.sm_out
 	res.ok = true
-	for i: int in range(1, smooth.size()):
-		res.points.append_array([smooth[i].x, smooth[i].y])
-	if start != Vector2(sx, sz):
+	for k: int in range(1, smooth.size()):
+		res.points.append_array([smooth[k].x, smooth[k].y])
+	if job.start != Vector2(job.sx, job.sz):
 		# El origen se movió a una celda válida: es el primer punto a seguir.
-		var head := PackedFloat64Array([start.x, start.y])
+		var head := PackedFloat64Array([job.start.x, job.start.y])
 		head.append_array(res.points)
 		res.points = head
-	return res
+	job.pts = PackedVector2Array()
+	job.sm_out = PackedVector2Array()
+	job.stage = Stage.DONE
 
 
 ## Componente conexa de la celda en la capa: la del grafo (>= 0) o, si la celda está en un bolsón
@@ -192,30 +547,70 @@ static func _center(cell: Vector2i) -> Vector2:
 
 
 ## Celda transitable más cercana a (x, z) (distancia euclídea a su centro) dentro de
-## SNAP_RADIUS_CELLS; con `match_comp`, solo de la componente `comp`. (-1, -1) si no hay.
-func _nearest(layer: int, around: Vector2i, x: float, z: float, comp: int, match_comp: bool) -> Vector2i:
-	var best := Vector2i(-1, -1)
-	var best_d: float = INF
-	for r: int in range(0, SNAP_RADIUS_CELLS + 1):
-		if best.x >= 0 and (r - 1) * MapGrid.TERRAIN_CELL > best_d:
-			break
-		for dz: int in range(-r, r + 1):
-			var edge: bool = absi(dz) == r
-			var dx: int = -r
-			while dx <= r:
-				var gx: int = around.x + dx
-				var gz: int = around.y + dz
-				if map.passable_cell(layer, gx, gz) and (not match_comp or component_of(layer, gx, gz) == comp):
-					var d: float = Vector2(MapGrid.terrain_center(gx) - x, MapGrid.terrain_center(gz) - z).length()
-					# Desempate determinista: menor distancia y, a igualdad, el primero visitado.
-					if d < best_d:
-						best_d = d
-						best = Vector2i(gx, gz)
-				if edge or r == 0:
-					dx += 1
-				else:
-					dx += 2 * r  # solo los dos extremos de las filas interiores del anillo
-	return best
+## SNAP_RADIUS_CELLS; con `match_comp`, solo de la componente `comp`. Se recorre un anillo por paso
+## (_near_step); el resultado queda en job.near_best ((-1, -1) si no hay).
+func _near_begin(job: Job, around: Vector2i, x: float, z: float, comp: int, match_comp: bool) -> void:
+	job.near_around = around
+	job.near_x = x
+	job.near_z = z
+	job.near_comp = comp
+	job.near_match = match_comp
+	job.near_r = 0
+	job.near_best = Vector2i(-1, -1)
+	job.near_best_d = INF
+
+
+## Recorre el anillo job.near_r. Devuelve true cuando la búsqueda terminó.
+func _near_step(job: Job) -> bool:
+	var r: int = job.near_r
+	if r > SNAP_RADIUS_CELLS or (job.near_best.x >= 0 and (r - 1) * MapGrid.TERRAIN_CELL > job.near_best_d):
+		return true
+	var layer: int = job.layer
+	var around: Vector2i = job.near_around
+	var visited: int = 0
+	for dz: int in range(-r, r + 1):
+		var edge: bool = absi(dz) == r
+		var dx: int = -r
+		while dx <= r:
+			var gx: int = around.x + dx
+			var gz: int = around.y + dz
+			visited += 1
+			if map.passable_cell(layer, gx, gz) and (not job.near_match or component_of(layer, gx, gz) == job.near_comp):
+				var d: float = Vector2(MapGrid.terrain_center(gx) - job.near_x, MapGrid.terrain_center(gz) - job.near_z).length()
+				# Desempate determinista: menor distancia y, a igualdad, el primero visitado.
+				if d < job.near_best_d:
+					job.near_best_d = d
+					job.near_best = Vector2i(gx, gz)
+			if edge or r == 0:
+				dx += 1
+			else:
+				dx += 2 * r  # solo los dos extremos de las filas interiores del anillo
+	_work += WORK_STEP + visited / WORK_NEAR_DIV
+	job.near_r = r + 1
+	return false
+
+
+## Costos (con la penalización junto a lo prohibido) de las celdas del cluster c, con caché: el
+## mapa es de solo lectura. La caché guarda como mucho COST_CACHE_MAX clusters (~4 KB cada uno) y
+## descarta el más viejo. Prepararlos cuenta como trabajo solo la primera vez (determinista: la
+## caché depende solo de la secuencia de búsquedas).
+func _cluster_costs(layer: int, c: int) -> PackedFloat32Array:
+	var key: int = layer * PathGraph.CLUSTERS + c
+	if _cost_cache.has(key):
+		return _cost_cache[key]
+	var cc: int = MapGrid.CLUSTER_CELLS
+	var ox: int = (c % MapGrid.CLUSTERS_PER_SIDE) * cc
+	var oz: int = (c / MapGrid.CLUSTERS_PER_SIDE) * cc
+	var costs := map.region_costs_safe(layer, ox, oz, cc, cc)
+	_work += cc * cc / WORK_REGION_CELL_DIV
+	if _cost_cache_order.size() >= COST_CACHE_MAX:
+		_cost_cache.erase(_cost_cache_order[_cost_cache_head])
+		_cost_cache_order[_cost_cache_head] = key
+		_cost_cache_head = (_cost_cache_head + 1) % COST_CACHE_MAX
+	else:
+		_cost_cache_order.append(key)
+	_cost_cache[key] = costs
+	return costs
 
 
 ## A* local dentro del cluster c entre dos celdas globales. Devuelve celdas globales.
@@ -223,8 +618,9 @@ func _local_path(layer: int, c: int, a: Vector2i, b: Vector2i) -> Array[Vector2i
 	var cc: int = MapGrid.CLUSTER_CELLS
 	var ox: int = (c % MapGrid.CLUSTERS_PER_SIDE) * cc
 	var oz: int = (c / MapGrid.CLUSTERS_PER_SIDE) * cc
-	var costs := map.region_costs_safe(layer, ox, oz, cc, cc)
+	var costs := _cluster_costs(layer, c)
 	var path := GridSearch.astar(costs, cc, cc, (a.y - oz) * cc + (a.x - ox), (b.y - oz) * cc + (b.x - ox), Terrain.MIN_COST[layer])
+	_work += GridSearch.last_expanded * WORK_LOCAL_CELL
 	var out: Array[Vector2i] = []
 	for li: int in path:
 		out.append(Vector2i(ox + li % cc, oz + li / cc))
@@ -240,6 +636,7 @@ func _cluster_labels(layer: int, graph: PathGraph, c: int) -> PackedInt32Array:
 	var ox: int = (c % MapGrid.CLUSTERS_PER_SIDE) * cc
 	var oz: int = (c / MapGrid.CLUSTERS_PER_SIDE) * cc
 	var costs := map.region_costs(layer, ox, oz, cc, cc)
+	_work += cc * cc
 	var labels := PackedInt32Array()
 	labels.resize(cc * cc)
 	var unset: int = -0x7FFFFFFF
@@ -282,6 +679,7 @@ func _connect(layer: int, graph: PathGraph, cell: Vector2i) -> Array:
 		var nc: int = graph.node_cell[v]
 		var nx: float = MapGrid.terrain_center(nc % LogicMap.SIDE)
 		var nz: float = MapGrid.terrain_center(nc / LogicMap.SIDE)
+		_work += WORK_STEP + int((absf(nx - cx0) + absf(nz - cz0)) / (MapGrid.TERRAIN_CELL * WORK_SEG_DIV))
 		if not map.segment_passable(layer, cx0, cz0, nx, nz):
 			nodes.clear()
 			costs.clear()
@@ -293,110 +691,18 @@ func _connect(layer: int, graph: PathGraph, cell: Vector2i) -> Array:
 	var cc: int = MapGrid.CLUSTER_CELLS
 	var ox: int = (c % MapGrid.CLUSTERS_PER_SIDE) * cc
 	var oz: int = (c / MapGrid.CLUSTERS_PER_SIDE) * cc
-	var region := map.region_costs_safe(layer, ox, oz, cc, cc)
+	var region := _cluster_costs(layer, c)
 	var targets := PackedInt32Array()
 	for v: int in range(r.x, r.y):
 		var nc: int = graph.node_cell[v]
 		targets.append((nc / LogicMap.SIDE - oz) * cc + (nc % LogicMap.SIDE - ox))
 	var dist := GridSearch.dijkstra(region, cc, cc, (cell.y - oz) * cc + (cell.x - ox), targets)
+	_work += GridSearch.last_expanded * WORK_LOCAL_CELL
 	for i: int in targets.size():
 		if dist[targets[i]] < INF:
 			nodes.append(r.x + i)
 			costs.append(dist[targets[i]])
 	return [nodes, costs]
-
-
-## A* sobre el grafo de portales. Devuelve las celdas de los nodos del camino (sin el origen ni el
-## destino), o vacío si no hay camino.
-func _abstract_path(layer: int, graph: PathGraph, s_cell: Vector2i, g_cell: Vector2i, res: Result) -> Array[Vector2i]:
-	var n: int = graph.node_count()
-	var S: int = n
-	var G: int = n + 1
-	var out: Array[Vector2i] = []
-	var from_s: Array = _connect(layer, graph, s_cell)
-	var to_g: Array = _connect(layer, graph, g_cell)
-	res.local_expanded += GridSearch.last_expanded
-	if (from_s[0] as PackedInt32Array).is_empty() or (to_g[0] as PackedInt32Array).is_empty():
-		return out
-	if _ag[layer].size() != n + 2:
-		_ag[layer].resize(n + 2)
-		_aparent[layer].resize(n + 2)
-		_astamp[layer].resize(n + 2)
-		_aclosed[layer].resize(n + 2)
-		_astamp[layer].fill(0)
-		_aclosed[layer].fill(0)
-	_stamp += 1
-	var stamp: int = _stamp
-	var g := _ag[layer]
-	var parent := _aparent[layer]
-	var seen := _astamp[layer]
-	var closed := _aclosed[layer]
-	# Costo extra de cada nodo hasta G (los del cluster del destino).
-	var goal_extra: Dictionary[int, float] = {}
-	var tg_nodes: PackedInt32Array = to_g[0]
-	var tg_costs: PackedFloat32Array = to_g[1]
-	for i: int in tg_nodes.size():
-		goal_extra[tg_nodes[i]] = tg_costs[i]
-	var hk: float = ABSTRACT_HEURISTIC[layer]
-	var heap := PackedInt64Array()
-	g[S] = 0.0
-	seen[S] = stamp
-	parent[S] = -1
-	var fs_nodes: PackedInt32Array = from_s[0]
-	var fs_costs: PackedFloat32Array = from_s[1]
-	for i: int in fs_nodes.size():
-		var v: int = fs_nodes[i]
-		var ng: float = fs_costs[i]
-		if seen[v] != stamp or ng < g[v]:
-			seen[v] = stamp
-			g[v] = ng
-			parent[v] = S
-			var cell: int = graph.node_cell[v]
-			GridSearch.heap_push(heap, int((ng + GridSearch.octile(cell % LogicMap.SIDE - g_cell.x, cell / LogicMap.SIDE - g_cell.y) * hk) * GridSearch.KEY_SCALE), v)
-	var expanded: int = 0
-	var found: bool = false
-	var starts := graph.edge_start
-	var tos := graph.edge_to
-	var ecost := graph.edge_cost
-	var ncell := graph.node_cell
-	while not heap.is_empty():
-		var v: int = GridSearch.heap_pop(heap)
-		if closed[v] == stamp:
-			continue
-		closed[v] = stamp
-		expanded += 1
-		if v == G:
-			found = true
-			break
-		var gv: float = g[v]
-		if goal_extra.has(v):
-			var ng: float = gv + goal_extra[v]
-			if seen[G] != stamp or ng < g[G]:
-				seen[G] = stamp
-				g[G] = ng
-				parent[G] = v
-				GridSearch.heap_push(heap, int(ng * GridSearch.KEY_SCALE), G)
-		for k: int in range(starts[v], starts[v + 1]):
-			var u: int = tos[k]
-			if closed[u] == stamp:
-				continue
-			var ng: float = gv + ecost[k]
-			if seen[u] != stamp or ng < g[u]:
-				seen[u] = stamp
-				g[u] = ng
-				parent[u] = v
-				var cell: int = ncell[u]
-				GridSearch.heap_push(heap, int((ng + GridSearch.octile(cell % LogicMap.SIDE - g_cell.x, cell / LogicMap.SIDE - g_cell.y) * hk) * GridSearch.KEY_SCALE), u)
-	res.abstract_expanded = expanded
-	if not found:
-		return out
-	var cur: int = parent[G]
-	while cur != S and cur >= 0:
-		var cell: int = ncell[cur]
-		out.append(Vector2i(cell % LogicMap.SIDE, cell / LogicMap.SIDE))
-		cur = parent[cur]
-	out.reverse()
-	return out
 
 
 ## Segmento transitable con holgura lateral CLEARANCE a ambos lados.
@@ -416,8 +722,26 @@ func _wide_passable(layer: int, a: Vector2, b: Vector2) -> bool:
 ## OPEN para la capa (todo transitable), no hace falta recorrer las celdas.
 func _seg(layer: int, ax: float, az: float, bx: float, bz: float) -> bool:
 	var graph: PathGraph = map.graph(layer)
+	_work += 1
 	if graph != null and _clusters_open(graph, ax, az, bx, bz):
 		return true
+	_work += int((absf(bx - ax) + absf(bz - az)) / (MapGrid.TERRAIN_CELL * WORK_SEG_DIV))
+	return map.segment_passable(layer, ax, az, bx, bz)
+
+
+## Celdas de 16 m recorridas por segment_clear (aproximadas por el largo; las que se ahorra el
+## atajo de los clusters abiertos no cuentan). El movimiento lo pone a 0 en cada tick y lo usa
+## como presupuesto determinista de los arranques de ruta.
+static var clear_cells: int = 0
+
+
+## Segmento transitable para la capa (lo usa el movimiento): si todos los clusters de 512 m que
+## toca son OPEN no recorre las celdas.
+static func segment_clear(map: LogicMap, layer: int, ax: float, az: float, bx: float, bz: float) -> bool:
+	var graph: PathGraph = map.graph(layer)
+	if graph != null and _clusters_open(graph, ax, az, bx, bz):
+		return true
+	clear_cells += int((absf(bx - ax) + absf(bz - az)) / MapGrid.TERRAIN_CELL)
 	return map.segment_passable(layer, ax, az, bx, bz)
 
 
@@ -475,23 +799,3 @@ static func _clusters_open(graph: PathGraph, ax: float, az: float, bx: float, bz
 		if states[cz * SIDE + cx] != PathGraph.ClusterState.OPEN:
 			return false
 	return true
-
-
-## String pulling: desde cada punto, salta al más lejano visible (segmento transitable con
-## holgura) sin pasar de SMOOTH_MAX metros.
-func _string_pull(layer: int, pts: PackedVector2Array) -> PackedVector2Array:
-	var out := PackedVector2Array([pts[0]])
-	var last: int = pts.size() - 1
-	var i: int = 0
-	while i < last:
-		var best: int = i + 1
-		var j: int = i + 2
-		while j <= last and pts[i].distance_to(pts[j]) <= SMOOTH_MAX:
-			if _wide_passable(layer, pts[i], pts[j]):
-				best = j
-			elif j - best > 3:
-				break  # ya no se ve desde hace varios puntos: no seguir buscando
-			j += 1
-		out.append(pts[best])
-		i = best
-	return out

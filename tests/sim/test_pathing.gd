@@ -200,8 +200,14 @@ func test_unreachable_order_is_rejected_to_the_player() -> void:
 	var sim := SimTestHelpers.make_map_sim()
 	var ship := sim.spawn_entity(1, 1, 600.0, 0.0)
 	assert_int(sim.submit_command(1, Command.make_move(7, PackedInt32Array([ship]), Vector2(-5000.0, 0.0)))).is_equal(Command.Reject.OK)
-	sim.step()
-	var rej := sim.queue.drain_rejections()
+	# Buscar la celda válida más cercana sin encontrarla recorre 64 anillos: con el presupuesto
+	# de trabajo por tick (T-018) puede llevar varios ticks.
+	var rej: Array[PackedInt32Array] = []
+	for t: int in 40:
+		sim.step()
+		rej = sim.queue.drain_rejections()
+		if not rej.is_empty():
+			break
 	assert_int(rej.size()).is_equal(1)
 	assert_array(Array(rej[0])).is_equal([1, 7, Command.Reject.UNREACHABLE])
 	sim.step()
@@ -316,17 +322,35 @@ func test_at_most_8_searches_per_tick() -> void:
 	# 20 órdenes de una unidad (20 rutas) con destinos detrás del cerro (búsqueda real).
 	for i: int in 20:
 		assert_int(sim.submit_command(1, Command.make_move(i + 1, PackedInt32Array([ids[i]]), Vector2(-1000.0, 100.0 + i * 4.0)), 0)).is_equal(Command.Reject.OK)
+	var done: int = 0
+	for t: int in 200:
+		sim.step()
+		# Como mucho 8 búsquedas terminadas por tick y el trabajo dentro del presupuesto (más el
+		# exceso de un paso atómico, que se descuenta del tick siguiente).
+		assert_int(sim.routes.last_searches).is_less_equal(RouteStore.MAX_SEARCHES_PER_TICK)
+		done += sim.routes.last_searches
+		# Las que esperan siguen quietas.
+		for e: int in ids:
+			var s := sim.store.slot_of(e)
+			if sim.store.route[s] != 0 and sim.routes.status[sim.store.route[s]] == RouteStore.Status.PENDING:
+				assert_float(sim.store.vel_x[s]).is_equal(0.0)
+				assert_float(sim.store.pos_x[s]).is_equal(-200.0 + ids.find(e) * 5.0)
+		if sim.routes.pending_count() == 0:
+			break
+	assert_int(done).is_equal(20)
+	assert_int(sim.routes.pending_count()).is_equal(0)
+
+
+func test_max_8_searches_even_with_spare_budget() -> void:
+	var sim := SimTestHelpers.make_map_sim()
+	var ids := PackedInt32Array()
+	for i: int in 20:
+		ids.append(sim.spawn_entity(0, 1, -200.0 + i * 5.0, 300.0))
+	# Destinos en línea recta (búsquedas muy baratas): el tope de 8 por tick manda.
+	for i: int in 20:
+		sim.submit_command(1, Command.make_move(i + 1, PackedInt32Array([ids[i]]), Vector2(-200.0 + i * 5.0, 360.0)), 0)
 	sim.step()
-	assert_int(sim.routes.last_searches).is_equal(RouteStore.MAX_SEARCHES_PER_TICK)
-	assert_int(sim.routes.pending_count()).is_equal(12)
-	# Las que esperan siguen quietas.
-	var waiting: int = 0
-	for e: int in ids:
-		var s := sim.store.slot_of(e)
-		if sim.routes.status[sim.store.route[s]] == RouteStore.Status.PENDING:
-			waiting += 1
-			assert_float(sim.store.vel_x[s]).is_equal(0.0)
-	assert_int(waiting).is_equal(12)
+	assert_int(sim.routes.last_searches).is_equal(8)
 	sim.step()
 	assert_int(sim.routes.last_searches).is_equal(8)
 	sim.step()
@@ -338,7 +362,10 @@ func test_one_route_per_group_not_per_unit() -> void:
 	var sim := SimTestHelpers.make_map_sim()
 	var ids := _spawn_block(sim, 1, 0, 30, -60.0, 60.0)
 	sim.submit_command(1, Command.make_move(1, ids, Vector2(-1000.0, 130.0)))
-	sim.step()
+	for t: int in 20:
+		sim.step()
+		if sim.routes.pending_count() == 0:
+			break
 	assert_int(sim.routes.active_count()).is_equal(1)
 	assert_int(sim.routes.total_searches).is_equal(1)
 	assert_int(sim.groups.active_count()).is_equal(1)
