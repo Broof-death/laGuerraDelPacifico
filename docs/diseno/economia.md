@@ -14,7 +14,7 @@ La economía tiene que contar lo mismo que la guerra de 1879: **el desierto vale
 - Los **víveres** salen de valles y oasis, o se importan por mar con pesos. Los **pesos** pagan casi todo. El **carbón** llega por mar (ADR-016) y es el cuello de botella de la escuadra y de las oficinas Shanks.
 - Decisiones del jugador: barato y seguro (oficina de paradas, carretas) contra caro y productivo pero dependiente del mar (Shanks, tren, carbón); defender puertos y vías contra atacar los del enemigo.
 
-**Para el prototipo bastan 3 recursos, 4 cargas y 19 edificios** (§2 y §4). Agua, fundiciones, ingenios y captura de edificios quedan para v2 (§13).
+**Para el prototipo bastan 3 recursos, 4 cargas, 17 edificios y 2 porteadores** (§2 y §4). Agua, fundiciones, ingenios y captura de edificios quedan para v2 (§13).
 
 ## 2. Recursos
 
