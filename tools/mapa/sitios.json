@@ -3,7 +3,7 @@
   "descripcion": "Sitios clave ampliados (lupas) del pipeline del mapa. Mecanismo y límites: ADR-009 §1b. Licencias de escala y fuentes de cada coordenada: docs/historia/sitios-clave-escala.md. Validar con: node tools/mapa/validar_sitios.mjs",
   "tarea": "T-040",
   "decisiones": ["ADR-009", "ADR-014", "ADR-015"],
-  "estado": "provisional: los sitios arica, alto_alianza_tacna, dolores y pisagua dependen de Q-012",
+  "estado": "completo: Q-012 y Q-013 respondidas; anillo estrecho por sitio según la enmienda del 17-10-2026 de ADR-009 §1b",
   "caja": {
     "lat_norte": -11.5,
     "lat_sur": -33.5,
@@ -22,7 +22,7 @@
   "lupa_por_defecto": {
     "w_factor": 1.0,
     "rho_c": 0.6,
-    "nota": "w = w_factor * r. Cada sitio puede bajar rho_c hasta 0,5 (límite de ADR-009). w_factor = 1 en todos los sitios (valor por defecto de ADR-009)."
+    "nota": "w = w_factor * r. Mínimos: w_factor 0,5 y rho_c 0,5 (rho_c < 1). Según la enmienda del 17-10-2026 de ADR-009 §1b (Q-012, Q-013), solo arica, alto_alianza_tacna, pisagua, dolores y tarapaca pueden usar w_factor < 1 (usan 0,5 y rho_c 0,5); cualquier otro sitio necesita un nuevo visto bueno de arquitectura."
   },
   "sitios": [
     {
@@ -75,15 +75,17 @@
     },
     {
       "id": "alto_alianza_tacna",
-      "nombre": "Alto de la Alianza (Tacna)",
-      "lat": -18.0003,
-      "lon": -70.2942,
-      "radio_real_km": 3.5,
+      "nombre": "Alto de la Alianza y Tacna",
+      "lat": -18.006,
+      "lon": -70.272,
+      "radio_real_km": 4.5,
       "k": 3,
+      "w_factor": 0.5,
       "rho_c": 0.5,
-      "motivo": "Batalla del Alto de la Alianza o de Tacna (26 may 1880), en la meseta de Intiorko: línea aliada de unos 2,5 km con cuatro reductos. PROVISIONAL (Q-012): con Arica a ~53 km, el núcleo no alcanza a la ciudad de Tacna (~4,8 km).",
+      "motivo": "Batalla del Alto de la Alianza o de Tacna (26 may 1880), en la meseta de Intiorko: línea aliada de unos 2,5 km con cuatro reductos, y la ciudad de Tacna, cuartel general aliado. Anillo estrecho por la cercanía de Arica (~53 km; enmienda de ADR-009 §1b, Q-012 y Q-013).",
       "puntos_nucleo": [
-        { "nombre": "Meseta de Intiorko (coordenada del artículo)", "lat": -18.0003, "lon": -70.2942, "fuente": "es.wikipedia Batalla del Alto de la Alianza" }
+        { "nombre": "Meseta de Intiorko (coordenada del artículo)", "lat": -18.0003, "lon": -70.2942, "fuente": "es.wikipedia Batalla del Alto de la Alianza" },
+        { "nombre": "Tacna (ciudad)", "lat": -18.013, "lon": -70.251, "fuente": "geografia-1879 §5.1 (A)" }
       ],
       "licencia": "docs/historia/sitios-clave-escala.md#alto_alianza_tacna"
     },
@@ -92,15 +94,31 @@
       "nombre": "Arica y su Morro",
       "lat": -18.483,
       "lon": -70.315,
-      "radio_real_km": 3.0,
+      "radio_real_km": 3.5,
       "k": 3,
+      "w_factor": 0.5,
       "rho_c": 0.5,
-      "motivo": "Asalto y toma del Morro de Arica (7 jun 1880), con los fuertes Ciudadela (cerro Chuño) y del Este (cerro Aniani) y las baterías del norte; combate naval del Huáscar y el Manco Cápac en la bahía (27 feb 1880). PROVISIONAL (Q-012).",
+      "motivo": "Asalto y toma del Morro de Arica (7 jun 1880), con los fuertes Ciudadela (cerro Chuño) y del Este (cerro Aniani) y las baterías del norte; combate naval del Huáscar y el Manco Cápac en la bahía (27 feb 1880). Anillo estrecho por la cercanía del Alto de la Alianza (enmienda de ADR-009 §1b, Q-012 y Q-013).",
       "puntos_nucleo": [
         { "nombre": "Morro de Arica (cumbre)", "lat": -18.4803, "lon": -70.3236, "fuente": "es.wikipedia Morro de Arica" },
         { "nombre": "Arica (ciudad)", "lat": -18.478, "lon": -70.321, "fuente": "geografia-1879 §5.1 (A)" }
       ],
       "licencia": "docs/historia/sitios-clave-escala.md#arica"
+    },
+    {
+      "id": "pisagua",
+      "nombre": "Pisagua",
+      "lat": -19.599,
+      "lon": -70.215,
+      "radio_real_km": 1.8,
+      "k": 3,
+      "w_factor": 0.5,
+      "rho_c": 0.5,
+      "motivo": "Desembarco y combate de Pisagua (2 nov 1879): desembarco chileno con oposición contra el puerto y sus defensas, a cargo de fuerzas peruanas y bolivianas; abre la campaña de Tarapacá. Anillo estrecho por la cercanía de Dolores (~29 km; enmienda de ADR-009 §1b, Q-012 y Q-013).",
+      "puntos_nucleo": [
+        { "nombre": "Pisagua (coordenada del artículo)", "lat": -19.599, "lon": -70.215, "fuente": "es.wikipedia Desembarco y combate de Pisagua" }
+      ],
+      "licencia": "docs/historia/sitios-clave-escala.md#pisagua"
     },
     {
       "id": "dolores",
@@ -109,8 +127,9 @@
       "lon": -69.95,
       "radio_real_km": 2.5,
       "k": 3,
+      "w_factor": 0.5,
       "rho_c": 0.5,
-      "motivo": "Batalla de Dolores o San Francisco (19 nov 1879): cerros San Francisco, Dolores, San Bartolo y Tres Clavos, y la aguada de El Porvenir. PROVISIONAL (Q-012): con Pisagua a ~28 km no caben las dos lupas completas.",
+      "motivo": "Batalla de Dolores o San Francisco (19 nov 1879): cerros San Francisco, Dolores, San Bartolo y Tres Clavos, y la aguada de El Porvenir. Anillo estrecho por la cercanía de Pisagua (enmienda de ADR-009 §1b, Q-012 y Q-013).",
       "puntos_nucleo": [
         { "nombre": "Pozo de Dolores / cerro San Francisco (coordenada del artículo)", "lat": -19.6667, "lon": -69.95, "fuente": "es.wikipedia Batalla de Dolores" }
       ],
@@ -118,15 +137,17 @@
     },
     {
       "id": "tarapaca",
-      "nombre": "Quebrada de Tarapacá",
-      "lat": -19.935,
-      "lon": -69.525,
-      "radio_real_km": 4.0,
+      "nombre": "Quebrada de Tarapacá e Iluga",
+      "lat": -19.94,
+      "lon": -69.53,
+      "radio_real_km": 5.5,
       "k": 3,
+      "w_factor": 0.5,
       "rho_c": 0.5,
-      "motivo": "Batalla de Tarapacá (27 nov 1879), victoria peruana: la quebrada de Tarapacá entre Quillahuasa y Huarasiña, con la cuesta de Visagra y las alturas. El radio está limitado por Iquique y Dolores (holgura < 2 km); la extensión real del campo queda PENDIENTE de verificar.",
+      "motivo": "Batalla de Tarapacá (27 nov 1879), victoria peruana: la quebrada de Tarapacá entre Quillahuasa y Huarasiña, con la cuesta de Visagra y las alturas, y Iluga, de donde partieron las columnas chilenas. Anillo estrecho por la cercanía de Iquique y Dolores (enmienda de ADR-009 §1b, Q-012 y Q-013). La extensión real de la quebrada queda PENDIENTE de verificar.",
       "puntos_nucleo": [
-        { "nombre": "Tarapacá (pueblo)", "lat": -19.920, "lon": -69.510, "fuente": "geografia-1879 §5.1 (A)" }
+        { "nombre": "Tarapacá (pueblo)", "lat": -19.920, "lon": -69.510, "fuente": "geografia-1879 §5.1 (A)" },
+        { "nombre": "Iluga", "lat": -19.9751, "lon": -69.5589, "fuente": "OpenStreetMap, citado en es.wikipedia Batalla de Tarapacá" }
       ],
       "licencia": "docs/historia/sitios-clave-escala.md#tarapaca"
     },
@@ -135,10 +156,10 @@
       "nombre": "Iquique",
       "lat": -20.207,
       "lon": -70.154,
-      "radio_real_km": 3.0,
+      "radio_real_km": 2.5,
       "k": 4,
       "rho_c": 0.6,
-      "motivo": "Principal puerto salitrero del Perú; bloqueo y combate naval de Iquique (21 may 1879), con la Esmeralda hundida frente a la ciudad; ocupación chilena (23 nov 1879).",
+      "motivo": "Principal puerto salitrero del Perú; bloqueo y combate naval de Iquique (21 may 1879), con la Esmeralda hundida frente a la ciudad; ocupación chilena (23 nov 1879). Radio de 2,5 km para dejar sitio a Tarapacá con Iluga.",
       "puntos_nucleo": [
         { "nombre": "Combate naval de Iquique (coordenada del artículo)", "lat": -20.2016, "lon": -70.1559, "fuente": "es.wikipedia Combate naval de Iquique" },
         { "nombre": "Iquique (ciudad)", "lat": -20.214, "lon": -70.152, "fuente": "geografia-1879 §5.1 (A)" }
@@ -190,11 +211,8 @@
     }
   ],
   "sin_lupa": [
-    { "id": "pisagua", "nombre": "Pisagua", "lat": -19.599, "lon": -70.215, "fuente": "es.wikipedia Desembarco y combate de Pisagua", "motivo": "Desembarco del 2 nov 1879. PROVISIONAL (Q-012): sin lupa porque está a ~28 km de Dolores; queda a 1:20." },
     { "id": "punta_gruesa", "nombre": "Punta Gruesa", "lat": -20.36, "lon": -70.18, "fuente": "geografia-1879 §5.1 (B)", "motivo": "Combate naval (21 may 1879); en el mar rige la escala del mapa (ADR-012). Cae en el anillo de la lupa de Iquique." },
     { "id": "angamos", "nombre": "Punta Angamos", "lat": -23.02, "lon": -70.515, "fuente": "geografia-1879 §5.2 (A)", "motivo": "Combate naval de Angamos (8 oct 1879), mar adentro; en el mar rige la escala del mapa (ADR-012)." },
-    { "id": "tacna_ciudad", "nombre": "Tacna (ciudad)", "lat": -18.013, "lon": -70.251, "fuente": "geografia-1879 §5.1 (A)", "motivo": "PROVISIONAL (Q-012): queda en el anillo de la lupa del Alto de la Alianza." },
-    { "id": "iluga", "nombre": "Iluga (reunión chilena antes de Tarapacá)", "lat": -19.9751, "lon": -69.5589, "fuente": "OpenStreetMap, citado en es.wikipedia Batalla de Tarapacá", "motivo": "Punto de partida de la marcha chilena, no campo de batalla: queda en la transición de la lupa de Tarapacá." },
     { "id": "mejillones", "nombre": "Mejillones", "lat": -23.10, "lon": -70.45, "fuente": "geografia-1879 §5.2 (A)", "motivo": "Puerto de guano sin combate terrestre." },
     { "id": "ancon", "nombre": "Ancón", "lat": -11.773, "lon": -77.176, "fuente": "geografia-1879 §5.1 (A)", "motivo": "Lugar del tratado de 1883, sin combate. Cae en el anillo de la lupa de Lima." },
     { "id": "pisco", "nombre": "Pisco", "lat": -13.71, "lon": -76.204, "fuente": "geografia-1879 §5.1 (A)", "motivo": "Desembarco chileno de 1880 sin combate mayor." },

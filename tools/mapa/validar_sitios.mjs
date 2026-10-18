@@ -1,13 +1,22 @@
-// Valida tools/mapa/sitios.json con las reglas de ADR-009 §1b (T-040).
+// Valida tools/mapa/sitios.json con las reglas de ADR-009 §1b y su enmienda
+// del 17-10-2026 (anillo por sitio, Q-012 y Q-013) (T-040).
 // Uso: node tools/mapa/validar_sitios.mjs [ruta/a/sitios.json]
 //
 // - Proyecta con transversa de Mercator (WGS84, serie de Krüger de orden 3,
 //   error << 1 m en la caja) con lon_0 = -72,5 y lat_0 = -22,5 (ADR-009 §1).
+// - Cada sitio puede fijar w_factor (w = w_factor·r; por defecto
+//   lupa_por_defecto.w_factor = 1, mínimo 0,5) y rho_c (por defecto 0,6,
+//   mínimo 0,5, < 1).
 // - Calcula R de cada lupa con R = [k·r + w·(k+1)/2 − ρc·(r + w)] / (1 − ρc)
-//   y lo comprueba integrando ρ numéricamente (d'(R) = R).
-// - Comprueba: k ∈ [3, 5], ρc ∈ [0,5, 1), discos R sin solapes, núcleo
-//   ampliado (k·r) dentro de la caja jugable, puntos del núcleo a ≤ r del
-//   centro, y dónde caen los sitios sin lupa (núcleo, anillo o fuera).
+//   (con los mínimos, R = (2,5·k − 1)·r) y lo comprueba integrando ρ
+//   numéricamente (d'(R) = R).
+// - Comprueba: k ∈ [3, 5], w_factor ≥ 0,5, ρc ∈ [0,5, 1), que solo los sitios
+//   autorizados por la enmienda usen w_factor < 1, discos R sin solapes,
+//   núcleo ampliado (k·r) dentro de la caja jugable, puntos del núcleo a ≤ r
+//   del centro, y dónde caen los sitios sin lupa (núcleo, anillo o fuera).
+// - Informa la anisotropía máxima (estiramiento tangencial d'/d frente al
+//   radial ρ) y el mínimo de det J = ρ·d'/d de cada lupa, para revisarlas en
+//   el mapa de distorsión de T-011.
 // Las distancias se dan en km "reales proyectados" (plano a 1:1) y en m de
 // juego (÷ 20). Sale con código 1 si alguna regla falla.
 
@@ -105,17 +114,52 @@ const avisos = [];
 const km = (m) => (m / 1000).toFixed(2);
 const juego = (m) => (m / ESCALA).toFixed(0);
 
+// Enmienda del 17-10-2026 de ADR-009 §1b (Q-013): solo estos sitios pueden
+// estrechar el anillo (w_factor < 1). Otro sitio necesita un nuevo visto
+// bueno de arquitectura antes de agregarse aquí.
+const ANILLO_ESTRECHO_PERMITIDO = new Set(["arica", "alto_alianza_tacna", "pisagua", "dolores", "tarapaca"]);
+const W_FACTOR_MIN = 0.5;
+const RHO_C_MIN = 0.5;
+
+// Recorre [0, R] y devuelve la anisotropía máxima (máx. de t/ρ y ρ/t, con
+// t = d'/d tangencial y ρ radial), dónde ocurre y el mínimo de det J = ρ·t.
+function analizar(L, pasos = 200000) {
+  const h = L.R / pasos;
+  let s = 0, anis = 1, dAnis = 0, detMin = Infinity, tMin = Infinity;
+  for (let i = 0; i < pasos; i++) {
+    const d = (i + 1) * h;
+    s += rho((i + 0.5) * h, L) * h;
+    const t = s / d, p = rho(d, L);
+    const a = Math.max(t / p, p / t);
+    if (a > anis) { anis = a; dAnis = d; }
+    detMin = Math.min(detMin, p * t);
+    tMin = Math.min(tMin, t);
+  }
+  return { anis, dAnis, detMin, tMin };
+}
+
 const lupas = datos.sitios.map((s) => {
   const r = s.radio_real_km * 1000;
-  const w = (s.w_factor ?? defecto.w_factor) * r;
+  const wf = s.w_factor ?? defecto.w_factor;
+  const w = wf * r;
   const rc = s.rho_c ?? defecto.rho_c;
-  const L = { id: s.id, r, k: s.k, w, rc, c: proyectar(s.lat, s.lon), s };
+  const L = { id: s.id, r, k: s.k, wf, w, rc, c: proyectar(s.lat, s.lon), s };
   L.R = radioR(r, s.k, w, rc);
   for (const campo of ["id", "nombre", "lat", "lon", "radio_real_km", "k", "motivo", "licencia"]) {
     if (s[campo] === undefined || s[campo] === "") errores.push(`${s.id}: falta el campo ${campo}`);
   }
-  if (!(s.k >= 3 && s.k <= 5)) errores.push(`${s.id}: k = ${s.k} fuera de [3, 5]`);
-  if (!(rc >= 0.5 && rc < 1)) errores.push(`${s.id}: rho_c = ${rc} fuera de [0,5, 1)`);
+  // Parámetros de la lupa: si alguno no es válido, el sitio no se mide (las
+  // demás comprobaciones no tendrían sentido) y se informa solo el error.
+  let valido = true;
+  const mal = (msg) => { errores.push(`${s.id}: ${msg}`); valido = false; };
+  if (!(typeof s.radio_real_km === "number" && s.radio_real_km > 0)) mal(`radio_real_km = ${s.radio_real_km} no es un número > 0`);
+  if (!(typeof s.k === "number" && s.k >= 3 && s.k <= 5)) mal(`k = ${s.k} fuera de [3, 5]`);
+  if (!(typeof wf === "number" && wf >= W_FACTOR_MIN)) mal(`w_factor = ${JSON.stringify(wf)} no es un número ≥ ${W_FACTOR_MIN}`);
+  if (!(typeof rc === "number" && rc >= RHO_C_MIN && rc < 1)) mal(`rho_c = ${JSON.stringify(rc)} no es un número en [${RHO_C_MIN}, 1)`);
+  if (typeof wf === "number" && wf < 1 && !ANILLO_ESTRECHO_PERMITIDO.has(s.id)) {
+    mal(`w_factor = ${wf} < 1 sin visto bueno de arquitectura (la enmienda de ADR-009 §1b solo lo permite en ${[...ANILLO_ESTRECHO_PERMITIDO].join(", ")})`);
+  }
+  if (!valido) return null;
   if (L.R - w < r + w) errores.push(`${s.id}: el anillo de compresión no cabe (R − w < r + w)`);
   if (!dentroCaja(s.lat, s.lon)) errores.push(`${s.id}: el centro está fuera de la caja`);
   const cierre = dPrima(L.R * 0.999999, L) - L.R * 0.999999;
@@ -127,8 +171,12 @@ const lupas = datos.sitios.map((s) => {
     if (d > r) errores.push(`${s.id}: "${p.nombre}" está a ${km(d)} km del centro, fuera del núcleo de ${km(r)} km`);
     return { nombre: p.nombre, d };
   });
+  if (L.R > r + 2 * w) {
+    L.an = analizar(L);
+    if (!(L.an.detMin > 0 && L.an.tMin >= 1 - 1e-9)) errores.push(`${s.id}: la lupa pliega el terreno (det J mínimo ${L.an.detMin.toFixed(3)}, d'/d mínimo ${L.an.tMin.toFixed(3)})`);
+  }
   return L;
-});
+}).filter(Boolean);
 
 const solapes = [];
 for (let i = 0; i < lupas.length; i++) {
@@ -144,12 +192,13 @@ for (let i = 0; i < lupas.length; i++) {
 // --- Informe ---
 console.log(`Sitios: ${ruta}`);
 console.log("\nLUPAS (km reales proyectados; m de juego = km·1000/20)");
-console.log("id                     k  ρc   r km   k·r km   R km   R/r   r juego  k·r juego  R juego  borde km");
+console.log("id                     k  w/r   ρc   r km   k·r km   R km   R/r   r juego  k·r juego  R juego  borde km");
 for (const L of lupas) {
   console.log(
-    `${L.id.padEnd(22)} ${L.k}  ${L.rc.toFixed(2)} ${km(L.r).padStart(6)} ${km(L.k * L.r).padStart(8)} ${km(L.R).padStart(7)} ${(L.R / L.r).toFixed(2).padStart(5)} ${juego(L.r).padStart(8)} ${juego(L.k * L.r).padStart(10)} ${juego(L.R).padStart(8)} ${km(L.borde).padStart(9)}`
+    `${L.id.padEnd(22)} ${L.k}  ${L.wf.toFixed(2)} ${L.rc.toFixed(2)} ${km(L.r).padStart(6)} ${km(L.k * L.r).padStart(8)} ${km(L.R).padStart(7)} ${(L.R / L.r).toFixed(2).padStart(5)} ${juego(L.r).padStart(8)} ${juego(L.k * L.r).padStart(10)} ${juego(L.R).padStart(8)} ${km(L.borde).padStart(9)}`
   );
   console.log(`    centro de juego: x = ${juego(L.c.x)} m, z = ${juego(L.c.z)} m`);
+  if (L.an) console.log(`    deformación: anisotropía máx. ${L.an.anis.toFixed(2)} en d = ${(L.an.dAnis / L.r).toFixed(2)}·r; det J mín. ${L.an.detMin.toFixed(2)}`);
   for (const p of L.puntos) console.log(`    núcleo: ${p.nombre} a ${km(p.d)} km del centro`);
 }
 
@@ -203,4 +252,4 @@ if (errores.length) {
   for (const e of errores) console.log(`  - ${e}`);
   process.exit(1);
 }
-console.log("\nOK: todas las reglas de ADR-009 §1b se cumplen.");
+console.log("\nOK: todas las reglas de ADR-009 §1b (con la enmienda del 17-10-2026) se cumplen.");
