@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://client/camera/rts_camera.tscn" id="1_cam"]
-[ext_resource type="Script" path="res://procedural_floor.gd" id="2_floor"]
+[ext_resource type="Script" path="res://client/world/logic_map_view.gd" id="2_map"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_top_color = Color(0.32, 0.52, 0.8, 1)
@@ -29,29 +29,6 @@ fog_depth_begin = 2500.0
 fog_depth_end = 6000.0
 fog_sky_affect = 0.0
 
-[sub_resource type="StandardMaterial3D" id="sand_mat"]
-metallic_specular = 0.0
-albedo_color = Color(0.64, 0.52, 0.36, 1)
-roughness = 0.95
-
-[sub_resource type="StandardMaterial3D" id="water_mat"]
-albedo_color = Color(0.03, 0.14, 0.24, 1)
-metallic_specular = 0.7
-roughness = 0.3
-
-[sub_resource type="PlaneMesh" id="water_mesh"]
-material = SubResource("water_mat")
-size = Vector2(8000, 10000)
-
-[sub_resource type="StandardMaterial3D" id="wet_sand_mat"]
-metallic_specular = 0.0
-albedo_color = Color(0.55, 0.45, 0.32, 1)
-roughness = 0.9
-
-[sub_resource type="PlaneMesh" id="beach_mesh"]
-material = SubResource("wet_sand_mat")
-size = Vector2(24, 10000)
-
 [node name="Battlefield" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -64,24 +41,8 @@ shadow_enabled = true
 directional_shadow_max_distance = 300.0
 
 [node name="RtsCamera" parent="." instance=ExtResource("1_cam")]
-map_bounds = Rect2(-3000, -3000, 6000, 6000)
+map_bounds = Rect2(-12288, -16384, 24576, 32768)
 initial_zoom = 0.55
 
-[node name="Tierra" type="Node3D" parent="."]
-
-[node name="ProceduralFloor" type="Node3D" parent="Tierra"]
-script = ExtResource("2_floor")
-chunk_size = 256.0
-view_radius = 12
-floor_material = SubResource("sand_mat")
-with_collision = false
-
-[node name="Playa" type="MeshInstance3D" parent="Tierra"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 238, 0.12, 0)
-mesh = SubResource("beach_mesh")
-cast_shadow = 0
-
-[node name="Mar" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4250, 0.3, 0)
-mesh = SubResource("water_mesh")
-cast_shadow = 0
+[node name="Terreno" type="Node3D" parent="."]
+script = ExtResource("2_map")

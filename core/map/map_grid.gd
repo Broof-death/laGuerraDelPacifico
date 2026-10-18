@@ -21,8 +21,14 @@ const VISION_BLOCK: float = 2048.0
 ## Sectores de datos del mapa y de Terrain3D.
 const SECTOR: float = 4096.0
 const SECTORS_PER_SIDE: int = 32
-## Rejilla lógica del terreno.
+## Rejilla lógica del terreno: 8192 celdas de 16 m por eje, 256 x 256 por sector.
 const TERRAIN_CELL: float = 16.0
+const TERRAIN_CELLS_PER_SIDE: int = 8192
+const SECTOR_CELLS: int = 256
+## Cluster de rutas del HPA* (ADR-009 §5): 512 m = 32 x 32 celdas de terreno; 256 por eje.
+const CLUSTER: float = 512.0
+const CLUSTER_CELLS: int = 32
+const CLUSTERS_PER_SIDE: int = 256
 
 
 ## Rectángulo del mundo en el plano (x, z).
@@ -52,6 +58,17 @@ static func cell_of(x: float, z: float) -> int:
 static func sector_of(x: float, z: float) -> Vector2i:
 	return Vector2i(clampi(int(floor((x + MAP_HALF) / SECTOR)), 0, SECTORS_PER_SIDE - 1),
 			clampi(int(floor((z + MAP_HALF) / SECTOR)), 0, SECTORS_PER_SIDE - 1))
+
+
+## Columna (o fila) de la celda de terreno de 16 m que contiene la coordenada, SIN acotar
+## (fuera del mundo da valores < 0 o >= 8192).
+static func terrain_index(v: float) -> int:
+	return int(floor((v + MAP_HALF) / TERRAIN_CELL))
+
+
+## Centro de la celda de terreno de índice i (en un eje).
+static func terrain_center(i: int) -> float:
+	return (i + 0.5) * TERRAIN_CELL - MAP_HALF
 
 
 ## Único punto de conversión de la simulación al render (ADR-009 punto 4). Hoy sin desplazamiento:

@@ -62,6 +62,10 @@ var _dr_checked: int = 0
 var _dr_over: int = 0
 ## Ticks (los primeros 40) en que alguna entidad en combate llevaba más de 300 ms desactualizada.
 var _late_ticks := PackedInt32Array()
+## Tiempo de cada búsqueda de ruta (µs).
+var _path_usec := PackedInt64Array()
+## --path_stress=1: el micro de los bots manda a puntos lejanos (búsquedas HPA* reales).
+var _path_stress: bool = false
 
 
 func _ready() -> void:
@@ -76,6 +80,7 @@ func _ready() -> void:
 	var loss: float = float(args.get("loss", 0.02))
 	var ghosts_enabled: bool = args.get("ghosts", "1") != "0"
 	_start_radius = float(args.get("radius", START_RADIUS))
+	_path_stress = args.get("path_stress", "0") != "0"
 	if scenario == "":
 		scenario = "custom"
 
@@ -87,7 +92,9 @@ func _ready() -> void:
 		return
 
 	_rng.seed = seed_value
-	_sim = Simulation.new(data, seed_value)
+	# Con el mapa provisional (T-013): rutas activas y validación del terreno. --map=0 lo quita.
+	var map: LogicMap = LogicMap.load_shared() if args.get("map", "1") != "0" else null
+	_sim = Simulation.new(data, seed_value, Rect2(), map)
 	_sim.profiling = true
 	_spawn_armies(players, units)
 	_server = MatchServer.new(_sim)
@@ -146,6 +153,7 @@ func _ready() -> void:
 		_server.tick_once()
 		var dt := Time.get_ticks_usec() - t0
 		var measured: bool = t >= mini(WARMUP_TICKS, ticks / 10)
+		_path_usec.append_array(_sim.routes.last_search_usec)
 		if measured:
 			tick_usec.append(dt)
 			snap_usec.append(_server.last_snapshot_usec)
@@ -203,6 +211,10 @@ func _ready() -> void:
 		"seconds_simulated": seconds,
 		"ticks_measured": tick_usec.size(),
 		"seed": seed_value,
+		"map": map != null,
+		"path_stress": _path_stress,
+		"path_searches": _sim.routes.total_searches,
+		"path_search_ms": _stats_ms(_path_usec),
 		"deaths_per_sec": deaths_per_sec,
 		"start_radius": _start_radius,
 		"wall_seconds": snappedf(wall_s, 0.01),
@@ -303,6 +315,10 @@ func _bots_decide(players: int) -> void:
 			var s := _sim.store.slot_of(subset[0])
 			var jitter := Vector2(_rng.randf_range(-30.0, 30.0), _rng.randf_range(-30.0, 30.0))
 			var target := Vector2(_sim.store.dest_x[s], _sim.store.dest_z[s]) + jitter
+			if _path_stress:
+				# Rutas largas de verdad (T-013): a un punto al azar de hasta ~3 km por tierra,
+				# rodeando el cerro, la bahía o la costa.
+				target = Vector2(_rng.randf_range(-2500.0, 200.0), _rng.randf_range(-2500.0, 2500.0))
 			_submit(p + 1, Command.make_move(_next_seq(), subset, target, true))
 
 

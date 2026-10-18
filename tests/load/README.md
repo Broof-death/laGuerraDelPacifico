@@ -8,7 +8,11 @@ godot --headless --path . res://tests/load/load_test.tscn -- --scenario=S3
 godot --headless --path . res://tests/load/load_test.tscn -- --players=6 --units=500 --seconds=120 --seed=1 --deaths_per_sec=300
 # Red: --loss=0.02 (pérdida en snapshots y acks), --ghosts=0 (sin clientes fantasma),
 # --radius=200 (radio del círculo inicial, en m)
+# Rutas (T-013): --map=0 (sin mapa lógico), --path_stress=1 (el micro manda a puntos de hasta ~3 km)
 ```
+
+- Desde T-013 la simulación usa el mapa lógico provisional (`data/map/`): rutas por tierra y mar
+  y validación del terreno en cada paso. El JSON agrega `path_searches` y `path_search_ms`.
 
 - Cada jugador empieza con N unidades en bloque, sobre un círculo de 200 m alrededor del centro del
   mapa. Los bots (2 Hz, por la cola de comandos normal) hacen ATTACK_MOVE de todo su ejército al lado
@@ -96,6 +100,26 @@ sincronización inicial); los KB/s por segundo cuentan todo.
   aparición), así que 1 s no es alcanzable sin subir el tope o achicar la aparición.
 - Armado de snapshots: con dead reckoning la mezcla sigue recorriendo los 3000 visibles por cliente,
   pero se escriben muchos menos registros: ~8 ms por tick en S2 (antes ~11).
+
+### T-013 con rutas (17-10-2026)
+
+Mismo PC y binario, semilla 1, 120 s, 2 % de pérdida. Mapa provisional (los ejércitos están en
+tierra, a 200 m del origen; la costa está en x ≈ 250). Tiempos en ms.
+
+| Escenario | tick p50 | tick p95 | tick p99 | tick máx | movimiento p95 | rutas p95 | búsquedas | búsqueda p95 / máx | Cumple |
+|---|---|---|---|---|---|---|---|---|---|
+| S1 2 x 500 | 2,42 | 4,05 | 4,30 | 5,49 | 0,79 | 0,06 | 480 | 0,05 / 1,96 | Sí |
+| S2 6 x 500 | 9,04 | **10,84** | 12,23 | 15,02 | 2,23 | 0,12 | 1440 | 0,04 / 1,98 | Tick sí; antigüedad en combate 400 ms (ver abajo) |
+| S2 sin mapa (`--map=0`) | 8,47 | 10,01 | 11,06 | — | 1,30 | 0,01 | — | — | Igual que con mapa |
+| S2 + `--path_stress=1` | 9,59 | 13,21 | 17,34 | 23,56 | 4,51 | 0,98 | 1440 | 3,30 / 8,19 | Tick sí |
+
+- El mapa suma ~0,9 ms al movimiento en S2 (la validación de la celda en cada paso) y casi nada a
+  las rutas: las órdenes de la prueba son cortas y salen en línea recta.
+- Con `--path_stress=1` cada decisión de los bots pide 6 rutas reales de hasta ~3 km (cerro, bahía,
+  costa); el peor tick (23,6 ms) es el de esas búsquedas más el cambio de punto de paso de muchas
+  unidades a la vez.
+- Antigüedad en combate: el máximo de 400 ms (umbral de 300) también sale en `develop` (59f2972)
+  sin T-013, con la misma semilla: no lo causa el mapa. Queda anotado para revisar aparte.
 
 # Prueba de carga del render del cliente (T-017, ADR-006 punto 7, ADR-010 punto 5)
 

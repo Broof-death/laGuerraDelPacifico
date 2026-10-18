@@ -34,6 +34,9 @@ enum Reject {
 	RATE_LIMITED = 10,
 	## El paquete del comando no se pudo decodificar (lo usa MatchServer).
 	MALFORMED = 11,
+	## No hay ruta: el destino (ajustado al punto válido más cercano) no es alcanzable para la capa
+	## de las unidades (T-013). Llega después de aceptar el comando, cuando se busca la ruta.
+	UNREACHABLE = 12,
 }
 
 var type: Type = Type.NONE

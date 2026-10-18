@@ -2,6 +2,11 @@
 
 - `tests/sim/`: pruebas unitarias de la simulación, del servidor de partida (MatchServer con
   LocalTransport) y de ENet en 127.0.0.1 (gdUnit4 v6.2.2, en `addons/gdUnit4/`).
+- `tests/sim/test_pathing.gd` (T-013): mapa lógico provisional, rutas por tierra y mar (cada punto
+  de paso y cada segmento, muestreado cada metro, en terreno válido para la capa), tropas y buques
+  que nunca pisan terreno prohibido en ningún tick, destino ajustado o rechazado (`UNREACHABLE`),
+  determinismo, 8 búsquedas por tick, una ruta por grupo, HPA* frente a A* plano en un mapa chico
+  (imprime `HPA_VS_ASTAR`) y tiempos de búsqueda y memoria (imprime `PATH_PERF` y `MAP_MEMORY`).
 - `tests/core/`: pruebas unitarias del código compartido: BitWriter/BitReader, códec de comandos y
   códec de snapshots (ida y vuelta, delta contra ack, acks y paquetes perdidos, tope de 4 KB).
 - `tests/client/`: pruebas unitarias de las vistas del cliente sin GPU (T-017): mallas provisionales,
@@ -14,6 +19,11 @@
 - `tests/sandbox/selection_capture.tscn` (con ventana): abre la partida local, simula un arrastre
   y una orden con eventos de entrada reales y guarda una captura
   (`-- --out=ruta.png --zoom=0.36 --focus=60,0 --yaw=0`).
+- `tests/sandbox/route_capture.tscn` (con ventana, T-013): partida local sobre el mapa provisional;
+  ordena a las tropas del jugador 1 ir detrás del cerro de prueba, dibuja la ruta en amarillo,
+  adelanta la simulación y guarda una captura (`-- --out=ruta.png`).
+- `tests/tools/build_test_map.gd`: regenera el mapa provisional de `data/map/` (MapDef, sectores
+  y grafos del HPA*): `godot --headless --path . -s res://tests/tools/build_test_map.gd`.
 - `tests/load/`: prueba de carga headless de ADR-006 (no usa gdUnit4) y prueba de render del cliente
   (`render_load.tscn`, con ventana). Ver `tests/load/README.md`.
 - `tests/net/`: comprobación de red con dos procesos de Godot (ver abajo).
