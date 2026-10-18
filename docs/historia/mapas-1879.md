@@ -21,6 +21,7 @@ Los archivos descargados están en [`docs/referencias/mapas/`](../referencias/ma
 - **[D] Documentado:** el dato viene de la ficha del catálogo de la institución o del propio mapa (título, fecha, autor impresos).
 - **[O] Observado:** lo describe el historiador mirando la imagen descargada. Es fiable para el contenido visible, no para la exactitud geográfica.
 - **[C] Discutido:** fuentes o catálogos que no coinciden.
+- **[I] Inferido:** deducción del historiador a partir de lo documentado o lo observado; no es un dato de fuente.
 - **[P] Pendiente:** no se pudo verificar en esta tarea.
 
 **Licencias y abreviaturas**
@@ -30,7 +31,7 @@ Los archivos descargados están en [`docs/referencias/mapas/`](../referencias/ma
 | **DP** | Dominio público. Así lo marca Wikimedia Commons (obra antigua y reproducción fiel de una obra plana) | Copiar, modificar y usar, también comercialmente. Citar la fuente es buena práctica |
 | **PCC** | «Patrimonio cultural común», según la ficha de Memoria Chilena / Biblioteca Nacional de Chile: «puede ser utilizado y reproducido libremente» | Igual que DP. Las miniaturas de Memoria Chilena llevan una marca de agua del sitio |
 | **NKC** | «No Known Copyright» o «No known copyright restrictions» (Princeton, British Library en Flickr Commons) | Uso libre según la institución |
-| **NC** | David Rumsey Map Collection: «Images may be reproduced or transmitted, but not for commercial use», con licencia Creative Commons (CC BY-NC-SA 3.0 según la copia en Stanford) | **Solo consulta.** No se descargan al repositorio ni se usan en el juego sin permiso de Cartography Associates |
+| **NC** | David Rumsey Map Collection: «Images may be reproduced or transmitted, but not for commercial use», con licencia Creative Commons (CC BY-NC-SA 3.0 según la copia en Stanford) | **Solo referencia.** No se usan dentro del juego. Por decisión de Feño (comentario en T-034), las dos láminas de Paz Soldán (1865) se guardan en el repositorio como referencia; si el juego pasa a ser comercial, hay que revisar esta licencia. Los demás mapas NC solo se enlazan |
 | **CC BY-SA** | Fotografía o dibujo moderno con licencia libre | Uso libre citando autor y licencia; las obras derivadas llevan la misma licencia |
 
 **Por qué los mapas de 1879 son de dominio público [D/I].** Los autores identificados murieron hace más de 70 años: Alejandro Bertrand (1854–1942), Mariano Felipe Paz Soldán (1821–1886), Clements Markham (1830–1916). Chile y Perú protegen las obras durante la vida del autor más 70 años. En los mapas sin autor identificado, la fecha de publicación (1859–1887) deja el plazo muy atrás [I].
@@ -58,8 +59,8 @@ Los archivos descargados están en [`docs/referencias/mapas/`](../referencias/ma
 | 11 | `bianchi_1879_combate_angamos.jpg` | Bianchi Tupper, *Combate de Angamos* | 1879 | Chile | DP |
 | 12 | `prieto_1880_prise_arica.jpg` | Prieto, *Prise d'Arica, 7 juin 1880* | 1880 | Chile | PCC |
 | 13 | `orrego_1881_lurin_lima.pdf` | Orrego, plano de Lurín a Lima (San Juan, Chorrillos, Miraflores) | 1881 | Chile | DP |
-| 14 | `paz_soldan_1865_mapa_general_peru.jpg` | Paz Soldán, *Mapa general del Perú* | 1865 | Perú | DP en Commons / NC en Rumsey |
-| 15 | `paz_soldan_1865_tacna_arica.jpg` | Paz Soldán, *Tacna y Arica* (departamento de Moquegua) | 1865 | Perú | DP en Commons / NC en Rumsey |
+| 14 | `paz_soldan_1865_mapa_general_peru.jpg` | Paz Soldán, *Mapa general del Perú* | 1865 | Perú | DP en Commons / NC en Rumsey: **solo referencia** |
+| 15 | `paz_soldan_1865_tacna_arica.jpg` | Paz Soldán, *Tacna y Arica* (departamento de Moquegua) | 1865 | Perú | DP en Commons / NC en Rumsey: **solo referencia** |
 | 16 | `ondarza_colton_1859_bolivia.jpg` | Ondarza, Mujía y Camacho, *Mapa de la República de Bolivia* | 1859 | Bolivia (impreso en Nueva York) | DP |
 
 Las imágenes grandes se guardaron reducidas (lado mayor de 2400 px, JPEG de calidad 82) para no inflar el repositorio. El enlace de cada ficha lleva al original en alta resolución.
@@ -147,7 +148,7 @@ Todos son chilenos salvo el de Gopčević (§2.9). Úsense para la forma del ter
 
 ### 3.1 Prieto, *Combate naval de Iquique en 21 de mayo de 1879*
 
-- **Autor [D/O]:** Carlos M. Prieto, delineador; litografía de P. Cadot, Santiago. «Según plano del Señor Eduardo Llanos (testigo ocular)». Escaneo de la British Library.
+- **Autor [D/O]:** Carlos M. Prieto, delineador; litografía de P. Cadot, Santiago. «Según plano del Señor Eduardo Llanos (testigo ocular)». Publicado en Benjamín Vicuña Mackenna, *Chile. Episodios marítimos. Las dos Esmeraldas* (Santiago, 1879), p. 407. Escaneo de la British Library (signatura HMNTS 9781.e.4).
 - **Contenido [O]:** derrotas de Huáscar, Independencia, Esmeralda, Covadonga y del vapor Lamar entre Punta Piedras y Punta Gruesa, con la hora de cada posición; escala de 4000 m. Cada buque tiene su propio trazo (continuo, discontinuo, punteado) y una silueta mínima.
 - **Interés:** modelo para mostrar **estelas y rumbos de buques** en el mapa naval.
 - **Licencia [D]:** DP.
@@ -200,7 +201,8 @@ Mapas oficiales del Perú y de Bolivia, hechos por sus propios gobiernos. Muestr
   - *Mapa general del Perú* [O]: litografía en tinta negra y sepia con relieve sombreado de gran calidad. Llega por el sur hasta el Loa. Enlace: https://commons.wikimedia.org/wiki/File:Mapa_general_del_Peru._Paz_Soldan._Geografia_del_Peru._Grabado_por_Delamare,_Calle_St._Andre_des_Arts,_45_(IA_dr_mapa-general-del-peru-paz-soldan-geografia-del-peru-grabado-por-delamare-00574087).jpg
   - *Tacna y Arica* (antiguo departamento de Moquegua): https://commons.wikimedia.org/wiki/File:Tacna_y_Arica_1865.JPG
 - **Otras láminas útiles, solo enlazadas:** *Plano topográfico de la ciudad del Callao* (L. Mariani, 1855, corregido en 1862), https://commons.wikimedia.org/wiki/File:L-Mariani-and-M-Paz-Soldan-Callao-topografico.jpeg ; *Departamento de Moquegua*, https://commons.wikimedia.org/wiki/File:Departamento_moquegua_1865.JPG [P: no revisado]; mapa mineralógico y planos de Arequipa y otras ciudades en la misma serie de Commons.
-- **Licencia [C]:** Commons las marca DP. Los escaneos vienen de la David Rumsey Map Collection, que pide no usarlos comercialmente (NC). **Uso:** referencia; para usarlos dentro del juego, buscar otra copia (BNP, Gallica, Internet Archive) o pedir permiso.
+- **Licencia [C]:** Commons las marca DP, pero los escaneos vienen de la David Rumsey Map Collection, que pide no usarlos comercialmente (NC).
+- **Decisión de Feño** (comentario en T-034): las dos láminas se quedan en `docs/referencias/mapas/` **solo como referencia** y no se usan dentro del juego. Si el juego pasa a ser comercial, hay que revisar esta licencia (pedir permiso a Cartography Associates o buscar otra copia en la BNP, Gallica o Internet Archive).
 - **Perspectiva:** peruana oficial. La frontera sur con Bolivia en el Loa es la que Perú sostenía; Perú reclamaba también una franja al sur del Loa (ver `geografia-1879.md` §2.3 y ADR-015).
 
 ### 4.2 Ondarza, Mujía y Camacho, *Mapa de la República de Bolivia* (1859)
@@ -221,7 +223,7 @@ Mapas oficiales del Perú y de Bolivia, hechos por sus propios gobiernos. Muestr
 
 ## 5. Solo enlazados por su licencia (no comercial)
 
-Mencionados en la descripción de la tarea. **No se descargaron** porque la David Rumsey Map Collection no permite el uso comercial de sus imágenes.
+Mencionados en la descripción de la tarea. **No se descargaron** porque la David Rumsey Map Collection no permite el uso comercial de sus imágenes. La excepción son las dos láminas de Paz Soldán (§4.1), que vienen de Rumsey a través de Commons y se guardan **solo como referencia** por decisión de Feño.
 
 | Mapa | Año | Enlace | Nota |
 |---|---|---|---|

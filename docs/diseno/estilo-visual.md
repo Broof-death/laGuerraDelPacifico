@@ -86,24 +86,33 @@ Feño eligió la opción A de **Q-018**, registrada como **ADR-019**: **un color
 | Bolivia | Verde | `#2F8F5B` | Franja verde de la bandera |
 | Bolivia (acento) | Amarillo | `#E3B23C` | Franja amarilla de la bandera |
 
-**Los valores hex son una propuesta del historiador [J]; el ajuste fino es de arte.** Se eligieron así:
+**Los valores hex son una propuesta del historiador [J]; el ajuste fino es de arte.** Cifras de contraste según WCAG 2.x (luminancia relativa en sRGB):
 
-- **Sobre el papel** (`#D4C9A9`, §2.1), contraste WCAG: Chile 5,1:1, Perú 4,9:1, Bolivia 2,5:1. Los tres son legibles como tinta del mapa estratégico; el verde, menos.
-- **Sobre el desierto** (pardo claro de referencia `#B9A98A` [J]): Chile 3,6:1, Perú 3,5:1, Bolivia 1,75:1. Por eso las unidades y edificios en el 3D llevan siempre un **contorno o halo oscuro** y el acento amarillo en Bolivia [J].
-- **Entre sí:** los tres tienen una luminancia parecida y se distinguen por el tono. Con una simulación de deuteranopía (Machado et al., 2009), una primera versión (carmín `#A51F34`, verde `#1B6B42`) dejaba a Perú y Bolivia casi iguales. Por eso el carmín se oscureció y el verde se aclaró y se volvió algo azulado: la distancia entre ambos se multiplicó por cuatro. Aun así, **Bolivia lleva siempre el acento amarillo como segunda señal** (banda, estandarte o borde), y se recomienda añadir un patrón o una forma para el modo daltónico [J].
+| Color | Luminancia relativa | Contraste sobre papel `#D4C9A9` | Contraste sobre desierto `#B9A98A` [J] |
+|---|---|---|---|
+| Chile `#2B4C8C` | 0,076 | 5,06:1 | 3,62:1 |
+| Perú `#9B1B30` | 0,080 | 4,91:1 | 3,51:1 |
+| Bolivia `#2F8F5B` | 0,210 | 2,45:1 | 1,75:1 |
+| Acento `#E3B23C` | 0,485 | 1,19:1 | 1,18:1 |
+
+Lo que se desprende:
+
+- **Chile y Perú** superan el mínimo de 3:1 para elementos gráficos (WCAG 1.4.11) sobre el papel y sobre el desierto.
+- **El verde de Bolivia no es legible por sí solo:** queda por debajo de 3:1 sobre el papel (2,45:1) y sobre el desierto (1,75:1). Necesita siempre un **borde o halo oscuro** (por ejemplo, la tinta `#3B3328` de §2.1).
+- **El acento amarillo** casi no contrasta con el papel ni con el desierto (1,19:1 y 1,18:1). También necesita **borde oscuro**; con un borde de tinta oscura (`#2A241C` [J]) el contraste es de 7,8:1.
+- **Entre sí:** Chile y Perú tienen casi la misma luminancia (0,076 y 0,080, contraste de **1,03:1**): en escala de grises son idénticos y solo se distinguen por el tono. Bolivia es bastante más claro (contraste de 2,07:1 con Chile y 2,01:1 con Perú).
+- **Daltonismo (deuteranopía).** Simulación de Machado et al. (2009), severidad 1, comparando una primera versión (carmín `#A51F34`, verde `#1B6B42`) con la actual:
+  - distancia euclídea en RGB lineal: de 0,040 a 0,165 (unas 4 veces más);
+  - diferencia de color en CIELAB (ΔE*76): de 15,0 a 17,3 (solo 1,2 veces más).
+
+  La mejora perceptual es modesta. Lo que más ayuda es que Bolivia sea ahora más claro que Perú (2,01:1). Por eso **Bolivia lleva siempre el acento amarillo como segunda señal** (banda, estandarte o borde), y el modo daltónico debe añadir un patrón o una forma [J].
 - **Frente al paisaje:** el verde de Bolivia es más azulado que el verde oliva de los oasis y valles (§2.3), para no confundirse con la vegetación; el azul de Chile es más oscuro y saturado que el mar del Pacífico.
+
+**Regla de ADR-019** (añadida tras la revisión de QA): todo símbolo, unidad o edificio coloreado por facción lleva **contorno o halo oscuro**; el acento amarillo de Bolivia, también.
 
 **Dónde se usa:** `FactionDef.color` de cada facción y `TeamColors.from_factions` (T-017), las tintas del territorio en el mapa estratégico (§2.2) y los símbolos de unidad del mapa táctico (§4).
 
 **Alternativas descartadas en ADR-019:** la convención de Turner (Perú ocre, Bolivia verde, Chile rosado), que se pierde en el desierto; un esquema mixto; y colores neutros no nacionales.
-
----|---|---|---|---|
-| A, recomendada | azul `#2F4A7A` | rojo carmín `#A3282F` | verde `#3F7A3A` (acento amarillo `#D4A93A`) | Un color dominante de cada bandera, sin repetir |
-| B | rosado (`#D3B387` medido; vivo, `#D9968C` [J]) | ocre `#D5B274` | verde `#A2AE7A` | Convención de Turner (1879); el ocre se pierde en el desierto |
-| C | como A en unidades; como B en el mapa de papel | | | Mixto |
-| D | colores neutros elegidos por legibilidad y daltonismo | | | La bandera queda solo en estandartes y buques |
-
-Los valores de A y del rosado vivo de B son **propuestas** [J]. Hoy `FactionDef.color` es provisional y la partida de T-017 usa una paleta por jugador (`TeamColors.from_factions` está listo para leer el color de la facción).
 
 ---
 
@@ -227,7 +236,7 @@ Las pinturas de la guerra se hicieron casi todas **después** (1880–1910) y co
 
 - **ADR-018** (Q-017, aceptada por Feño): la interfaz imita la cartografía impresa de 1879 y el mundo 3D es naturalista. Es una licencia estética: el juego se inspira en la cartografía de la época, no reproduce un mapa concreto.
 - **ADR-019** (Q-018, aceptada por Feño): un color de cada bandera, sin repetir.
-- Queda pendiente, aparte, el uso de los mapas de Paz Soldán (1865), cuyo escaneo es de la colección David Rumsey (ver `mapas-1879.md` §4.1).
+- **Mapas de Paz Soldán (1865)**, decisión de Feño (comentario en T-034): el escaneo es de la colección David Rumsey (no comercial). Las dos láminas se quedan en `docs/referencias/mapas/` **solo como referencia**; no se usan dentro del juego. Si el juego pasa a ser comercial, hay que revisar esa licencia (ver `mapas-1879.md` §4.1).
 
 ## 11. Pendientes
 
