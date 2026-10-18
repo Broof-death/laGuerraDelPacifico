@@ -6,7 +6,14 @@
   códec de snapshots (ida y vuelta, delta contra ack, acks y paquetes perdidos, tope de 4 KB).
 - `tests/client/`: pruebas unitarias de las vistas del cliente sin GPU (T-017): mallas provisionales,
   colores de bando, catálogo visual (def -> malla o escena), niveles de detalle, pool de vistas y
-  reparto entre vistas y lotes.
+  reparto entre vistas y lotes. Selección y órdenes (T-007): proyección con cámara sintética,
+  rectángulo, clic, Shift, grupos de control, armado de comandos en bloques de 512 y el costo del
+  rectángulo con 2000 unidades (`test_selection.gd`, imprime `SELECTION_PERF`); y el
+  `SelectionController` con MatchServer y MatchClient reales por LocalTransport
+  (`test_selection_controller.gd`).
+- `tests/sandbox/selection_capture.tscn` (con ventana): abre la partida local, simula un arrastre
+  y una orden con eventos de entrada reales y guarda una captura
+  (`-- --out=ruta.png --zoom=0.36 --focus=60,0 --yaw=0`).
 - `tests/load/`: prueba de carga headless de ADR-006 (no usa gdUnit4) y prueba de render del cliente
   (`render_load.tscn`, con ventana). Ver `tests/load/README.md`.
 - `tests/net/`: comprobación de red con dos procesos de Godot (ver abajo).
