@@ -10,7 +10,8 @@ extends Node3D
 ##    viéndose como unos 3 px).
 ## 3. Da una vista individual (EntityViewPool, como máximo 256) a lo más cercano: las unidades
 ##    a < 150 m y los buques y edificios hasta 1,5 km, por orden de distancia. Esas entidades no
-##    se dibujan en los lotes. Las vistas a < 60 m muestran etiqueta y barra de vida.
+##    se dibujan en los lotes. Las vistas a < 60 m y las de entidades seleccionadas (T-007)
+##    muestran etiqueta y barra de vida; las seleccionadas a media distancia también piden vista.
 ## 4. Escribe el buffer completo de cada MultiMesh (uno por def_index, jugador y nivel) de una
 ##    vez y ajusta visible_instance_count. Color de bando por instancia.
 ##
@@ -41,6 +42,8 @@ var use_pool: bool = true
 var auto_update: bool = true
 ## Cámara a usar; null = la cámara activa del viewport.
 var camera: Camera3D
+## Selección del jugador (T-007): sus entidades muestran etiqueta y barra. null = ninguna.
+var selection: UnitSelection
 
 ## Estadísticas del último refresh().
 var stat_visible: int = 0
@@ -159,6 +162,8 @@ func refresh() -> void:
 	var prefers := _def_prefers
 	var candidates := PackedInt64Array()
 	var with_pool: bool = use_pool and pool != null
+	var sel: UnitSelection = selection
+	var sids := state.ids
 	var visible_count: int = 0
 
 	for s: int in n:
@@ -190,7 +195,7 @@ func refresh() -> void:
 		var dz: float = z - cz
 		var dist: float = sqrt(dx * dx + dy * dy + dz * dz)
 		var lod: int = 0 if dist < LOD_NEAR else (1 if dist < LOD_FAR else 2)
-		if with_pool and (lod == 0 or (lod == 1 and prefers[d] == 1)):
+		if with_pool and (lod == 0 or (lod == 1 and (prefers[d] == 1 or (sel != null and sel.is_selected(sids[s]))))):
 			candidates.append((int(dist * 8.0) << 32) | s)
 		var b: int = g * LODS + lod
 		bucket[s] = b
@@ -224,7 +229,7 @@ func refresh() -> void:
 			pooled += 1
 			v.position = Vector3(rx[s], 0.0, rz[s])
 			v.rotation = Vector3(0.0, rh[s], 0.0)
-			var near: bool = dist_arr[s] < DETAIL_DISTANCE
+			var near: bool = dist_arr[s] < DETAIL_DISTANCE or (sel != null and sel.is_selected(ids[s]))
 			if near != v.details_visible:
 				v.set_details_visible(near)
 			v.apply_state(act[s], hp[s], prog[s])
