@@ -44,7 +44,9 @@ func _ready() -> void:
 
 
 func _start_server(data: GameData) -> void:
-	var sim := Simulation.new(data, config.match_seed)
+	# Mapa lógico (ADR-009): rutas por tierra y mar y validación del terreno (T-013). Hoy es el
+	# mapa provisional de data/map/; el cliente dibuja su costa desde los mismos datos.
+	var sim := Simulation.new(data, config.match_seed, Rect2(), LogicMap.load_shared())
 	server = MatchServer.new(sim)
 	server.max_players = config.max_players
 	server.allow_time_scale = config.mode == MatchConfig.Mode.SINGLE
@@ -93,6 +95,10 @@ func _start_views(data: GameData) -> void:
 	var world: Node3D = load("res://client/world/battlefield.tscn").instantiate()
 	add_child(world)
 	var cam := world.get_node("RtsCamera") as RtsCamera
+	# Límites de la cámara: la zona jugable del mapa lógico que dibuja el terreno (T-013).
+	var terrain := world.get_node_or_null("Terreno") as LogicMapView
+	if terrain != null and terrain.playable_rect().has_area():
+		cam.map_bounds = terrain.playable_rect()
 	_apply_camera_args(cam)
 	renderer = UnitBatchRenderer.new()
 	renderer.name = "Unidades"

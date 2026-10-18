@@ -168,7 +168,7 @@ func _add(id: int, d: int, owner: int, x: float, z: float, heading: float, dir_z
 
 
 func _start_full() -> void:
-	var sim := Simulation.new(_data, 1)
+	var sim := Simulation.new(_data, 1, Rect2(), LogicMap.load_shared())
 	_server = MatchServer.new(sim)
 	_server.allow_time_scale = true
 	_server.spawn_test_armies(PLAYERS, ceili(float(units) / PLAYERS), 120.0)

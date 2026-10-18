@@ -8,7 +8,8 @@ extends RefCounted
 
 const BOT_FIRST_ORDER: float = 2.0
 const BOT_INTERVAL: float = 7.0
-## Costa del escenario de prueba (client/world/battlefield.tscn): mar para x > COAST_X.
+## Costa del mapa provisional cerca del origen (core/map/test_map_builder.gd, el mismo que dibuja
+## client/world/logic_map_view.gd): mar para x > COAST_X entre z = -500 y z = 500.
 const COAST_X: float = 250.0
 
 var server: MatchServer
