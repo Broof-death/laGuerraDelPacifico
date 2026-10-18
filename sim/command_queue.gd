@@ -24,7 +24,8 @@ class LogEntry:
 
 
 ## Tipos que la simulación sabe aplicar hoy. Se agregan al implementar cada mecánica.
-const SUPPORTED_TYPES: Array[Command.Type] = [Command.Type.MOVE, Command.Type.ATTACK_MOVE, Command.Type.STOP]
+## ATTACK es provisional (T-007): sin combate, mueve hacia la posición del objetivo.
+const SUPPORTED_TYPES: Array[Command.Type] = [Command.Type.MOVE, Command.Type.ATTACK_MOVE, Command.Type.STOP, Command.Type.ATTACK]
 
 ## Máximo de comandos esperando el próximo tick (sumando todos los jugadores).
 const MAX_PENDING: int = 4096
@@ -127,6 +128,8 @@ func _validate(player_id: int, cmd: Command, store: EntityStore, bounds: Rect2) 
 		if not p.is_finite() or p.x < bounds.position.x or p.y < bounds.position.y \
 				or p.x > bounds.end.x or p.y > bounds.end.y:
 			return Command.Reject.TARGET_OUT_OF_BOUNDS
+	if cmd.type == Command.Type.ATTACK and store.slot_of(cmd.target_id) < 0:
+		return Command.Reject.UNKNOWN_ENTITY
 	return Command.Reject.OK
 
 
