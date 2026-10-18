@@ -1,6 +1,6 @@
 # Guía de estilo visual: la estética de 1879
 
-> Tarea **T-034** (P-002). Autor: historiador. **Estado: propuesta.** Dos decisiones siguen abiertas para Feño: **Q-017** (tono visual general) y **Q-018** (colores de facción). Mientras no se respondan, lo marcado **[J]** es solo una sugerencia.
+> Tarea **T-034** (P-002). Autor: historiador. **Estado: tono y colores de facción decididos.** Feño eligió la opción A en **Q-017** (tono visual) y en **Q-018** (colores de facción), registradas como **ADR-018** y **ADR-019** (área arte, aceptadas). El resto de lo marcado **[J]** sigue siendo una propuesta que el área de arte puede ajustar.
 >
 > Fichas de historia en las que se apoya: [mapas-1879.md](../historia/mapas-1879.md) (mapas con su licencia), [ejercitos-1879.md](../historia/ejercitos-1879.md) §6 (uniformes), [armadas-1879.md](../historia/armadas-1879.md) §2 y §4 (buques y modelos provisionales), [geografia-1879.md](../historia/geografia-1879.md) §6 (relieve), `recursos-1879.md` §11 (modelos industriales, rama `feature/T-035-recursos-epoca`) y `sitios-clave-escala.md` (lupas, rama `feature/T-040-sitios-clave`).
 >
@@ -19,15 +19,15 @@
 
 ---
 
-## 1. Idea general [J]
+## 1. Idea general (decidida: ADR-018)
 
-**«La guerra vista a través de sus mapas.»** Lo más reconocible y mejor conservado de 1879 son los mapas impresos: papel crema, tinta sepia, relieve dibujado con normales (rayitas de pendiente), nombres en mayúsculas espaciadas y, en los mejores, coloreado a mano. La propuesta (opción A de **Q-017**) es:
+**«La guerra vista a través de sus mapas.»** Lo más reconocible y mejor conservado de 1879 son los mapas impresos: papel crema, tinta sepia, relieve dibujado con normales (rayitas de pendiente), nombres en mayúsculas espaciadas y, en los mejores, coloreado a mano. Feño eligió la opción A de **Q-017**, registrada como **ADR-018**:
 
 1. **Interfaz de época.** El minimapa, el mapa estratégico, los menús y las cartelas imitan esa cartografía (§2, §3 y §4).
 2. **Mundo 3D naturalista y sobrio.** El terreno, los buques, las tropas y los edificios se ven con luz natural y una paleta desaturada de desierto, mar frío y adobe (§5 a §8). Nada de filtros de grabado sobre el 3D: cuesta mucho y choca con el presupuesto de ADR-010.
 3. **Tono respetuoso.** Los tres bandos reciben el mismo cuidado visual. Sin caricaturas, sin «buenos» ni «malos» por color o por música. Las pinturas conmemorativas de después de la guerra (§9) sirven para la composición, no como modelo de tono.
 
-Las alternativas (todo el juego como grabado, o una interfaz moderna sin referencias de época) están en **Q-017**.
+Alternativas descartadas en ADR-018: todo el juego como grabado (costo en shaders y riesgo para ADR-010) y una interfaz moderna sin referencias de época.
 
 ---
 
@@ -62,7 +62,7 @@ El mapa británico de Turner es el único del conjunto que colorea los tres paí
 
 En el mapa de Bolivia de 1859 (Ondarza, Mujía y Camacho) los departamentos están coloreados en **verdes, rosados, amarillos y azules pálidos** [O]: la acuarela de los mapas de la época era clara y transparente [I].
 
-**Uso propuesto [J]:** colorear el territorio del mapa estratégico con tintas planas y transparentes sobre el papel, como en estos mapas, y con un borde de color más intenso en la frontera (Turner y Ondarza refuerzan así los límites [O]).
+**Uso en el mapa estratégico [J]:** colorear el territorio con los colores de facción de ADR-019 (§2.4), aplicados como tinta plana y transparente sobre el papel, igual que en estos mapas, con un borde más intenso en la frontera (Turner y Ondarza refuerzan así los límites [O]). Los colores de Turner quedan solo como referencia histórica.
 
 ### 2.3 Paisaje 3D [J]
 
@@ -75,12 +75,29 @@ No hay fotos en color de 1879; estas son pautas, no datos. Se ajustan con fotogr
 - **Andes y altiplano:** pardos, ocres y nieve en las cumbres; la puna es amarillenta (ichu).
 - **Luz:** sol alto y duro, sombras cortas y cielo muy despejado en el desierto.
 
-### 2.4 Colores de facción (pendiente de Q-018)
+### 2.4 Colores de facción (decididos: ADR-019)
 
-Las tres banderas comparten el rojo, así que no sirven tal cual. Opciones de **Q-018**:
+Feño eligió la opción A de **Q-018**, registrada como **ADR-019**: **un color dominante de cada bandera, sin repetir**. Las tres banderas comparten el rojo, así que a cada país se le asigna un color de su bandera que no use ningún otro bando.
 
-| Opción | Chile | Perú | Bolivia | Comentario |
-|---|---|---|---|---|
+| Facción | Color | Valor inicial [J] | De dónde sale |
+|---|---|---|---|
+| Chile | Azul | `#2B4C8C` | Cantón azul de la bandera |
+| Perú | Rojo carmín | `#9B1B30` | Franjas rojas de la bandera |
+| Bolivia | Verde | `#2F8F5B` | Franja verde de la bandera |
+| Bolivia (acento) | Amarillo | `#E3B23C` | Franja amarilla de la bandera |
+
+**Los valores hex son una propuesta del historiador [J]; el ajuste fino es de arte.** Se eligieron así:
+
+- **Sobre el papel** (`#D4C9A9`, §2.1), contraste WCAG: Chile 5,1:1, Perú 4,9:1, Bolivia 2,5:1. Los tres son legibles como tinta del mapa estratégico; el verde, menos.
+- **Sobre el desierto** (pardo claro de referencia `#B9A98A` [J]): Chile 3,6:1, Perú 3,5:1, Bolivia 1,75:1. Por eso las unidades y edificios en el 3D llevan siempre un **contorno o halo oscuro** y el acento amarillo en Bolivia [J].
+- **Entre sí:** los tres tienen una luminancia parecida y se distinguen por el tono. Con una simulación de deuteranopía (Machado et al., 2009), una primera versión (carmín `#A51F34`, verde `#1B6B42`) dejaba a Perú y Bolivia casi iguales. Por eso el carmín se oscureció y el verde se aclaró y se volvió algo azulado: la distancia entre ambos se multiplicó por cuatro. Aun así, **Bolivia lleva siempre el acento amarillo como segunda señal** (banda, estandarte o borde), y se recomienda añadir un patrón o una forma para el modo daltónico [J].
+- **Frente al paisaje:** el verde de Bolivia es más azulado que el verde oliva de los oasis y valles (§2.3), para no confundirse con la vegetación; el azul de Chile es más oscuro y saturado que el mar del Pacífico.
+
+**Dónde se usa:** `FactionDef.color` de cada facción y `TeamColors.from_factions` (T-017), las tintas del territorio en el mapa estratégico (§2.2) y los símbolos de unidad del mapa táctico (§4).
+
+**Alternativas descartadas en ADR-019:** la convención de Turner (Perú ocre, Bolivia verde, Chile rosado), que se pierde en el desierto; un esquema mixto; y colores neutros no nacionales.
+
+---|---|---|---|---|
 | A, recomendada | azul `#2F4A7A` | rojo carmín `#A3282F` | verde `#3F7A3A` (acento amarillo `#D4A93A`) | Un color dominante de cada bandera, sin repetir |
 | B | rosado (`#D3B387` medido; vivo, `#D9968C` [J]) | ocre `#D5B274` | verde `#A2AE7A` | Convención de Turner (1879); el ocre se pierde en el desierto |
 | C | como A en unidades; como B en el mapa de papel | | | Mixto |
@@ -206,11 +223,11 @@ Las pinturas de la guerra se hicieron casi todas **después** (1880–1910) y co
 
 ---
 
-## 10. Licencias estéticas pendientes
+## 10. Licencias estéticas
 
-- **Q-017:** tono visual general (interfaz de época, todo grabado o interfaz moderna).
-- **Q-018:** colores de facción.
-- Cuando se respondan, el historiador registra la decisión con `registrar_decision` (área `historia` o `arte`) y actualiza esta guía.
+- **ADR-018** (Q-017, aceptada por Feño): la interfaz imita la cartografía impresa de 1879 y el mundo 3D es naturalista. Es una licencia estética: el juego se inspira en la cartografía de la época, no reproduce un mapa concreto.
+- **ADR-019** (Q-018, aceptada por Feño): un color de cada bandera, sin repetir.
+- Queda pendiente, aparte, el uso de los mapas de Paz Soldán (1865), cuyo escaneo es de la colección David Rumsey (ver `mapas-1879.md` §4.1).
 
 ## 11. Pendientes
 
@@ -219,7 +236,7 @@ Las pinturas de la guerra se hicieron casi todas **después** (1880–1910) y co
 - [ ] Fotos de 1879–1884 de Iquique, Antofagasta, Tacna, Lima y de las oficinas salitreras (Memoria Chilena, Biblioteca Nacional del Perú, Courret).
 - [ ] Referencias bolivianas de uniformes y ciudades (Cobija, Calama, La Paz) de fuentes bolivianas.
 - [ ] Elegir la fuente condensada de títulos y comprobar las licencias OFL.
-- [ ] Probar la paleta de §2 en pantalla (contraste de textos sobre papel, modo daltónico).
+- [ ] Probar la paleta de §2 en pantalla (contraste de textos sobre papel, modo daltónico) y que arte ajuste los valores de ADR-019 sobre el terreno real (T-011).
 
 ## Fuentes
 
